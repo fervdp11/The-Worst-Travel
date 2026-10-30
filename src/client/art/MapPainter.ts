@@ -5,14 +5,15 @@ import { INK, MapPalette, PALETTES, rgba, shade } from './palette';
 import { drawFlat } from './props';
 import type { Rect } from '../../shared/geometry';
 import { PLANE } from '../../shared/maps/plane';
-import { TRAIN, xs, xe } from '../../shared/maps/train';
 import { SHIP } from '../../shared/maps/ship';
+import { MARKET } from '../../shared/maps/market';
+import { propShadow } from '../../shared/maps/objects';
 
 export const CHUNK = 1024;
 export const CHUNK_MARGIN = 3;
 
 const SKY: Record<string, [string, string]> = {
-  train: ['#bfe3ff', '#7fb9e6'],
+  market: ['#d7ecff', '#9ec9ea'],
   ship: ['#cdeeff', '#5fa8d3'],
   plane: ['#e6f3ff', '#8ec5ff'],
   lobby: ['#ffe2b8', '#f2a65a'],
@@ -80,99 +81,41 @@ export class MapPainter {
     const id = this.def.id;
     const lv = this.def.levels.find((l) => l.id === level)!;
     const pal = this.pal;
-    if (id === 'train') {
-      for (let i = 0; i < 9; i++) {
-        const x0 = xs(i), x1 = xe(i);
-        if (x1 + 80 < chunk.x || x0 - 200 > chunk.x + chunk.w) continue;
-        // Bogies y ruedas bajo el lateral
-        for (const bx of [x0 + 90, x1 - 150]) {
-          rr(ctx, bx, 312, 120, 34, 6); fillStroke(ctx, '#2b2d42', INK, 2);
-          for (const wx of [bx + 26, bx + 94]) {
-            ctx.beginPath(); ctx.arc(wx, 340, 15, 0, Math.PI * 2); fillStroke(ctx, '#3d405b', INK, 2.2);
-            ctx.beginPath(); ctx.arc(wx, 340, 6, 0, Math.PI * 2); fillStroke(ctx, '#adb5bd', INK, 1.5);
-          }
-        }
-        // Lateral visible (cara sur exterior del coche)
-        const body = i === 0 ? '#c8323f' : pal.hull;
-        rr(ctx, x0, 294, x1 - x0, 32, 4);
-        fillStroke(ctx, vgrad(ctx, 294, 326, shade(body, 0.08), shade(body, -0.25)), INK, 2);
-        ctx.fillStyle = pal.trim; ctx.fillRect(x0 + 2, 304, x1 - x0 - 4, 3);
-        for (let wx = x0 + 60; wx < x1 - 40; wx += 92) { rr(ctx, wx - 18, 309, 36, 12, 3); fillStroke(ctx, vgrad(ctx, 309, 321, '#cfe9ff', '#7fb1d8'), INK, 1.2); }
-        if (i === 0) {
-          // Morro de la locomotora
-          ctx.beginPath();
-          ctx.moveTo(x0, 0); ctx.lineTo(x0 - 40, 6); ctx.lineTo(x0 - 110, 30); ctx.lineTo(x0 - 150, 70); ctx.lineTo(x0 - 150, 230); ctx.lineTo(x0 - 110, 270); ctx.lineTo(x0 - 40, 294); ctx.lineTo(x0, 300); ctx.closePath();
-          fillStroke(ctx, vgrad(ctx, 0, 300, '#d94452', '#9e2531'), INK, 2.5);
-          ctx.fillStyle = '#ffd23f';
-          ctx.beginPath(); ctx.moveTo(x0 - 150, 120); ctx.lineTo(x0 - 60, 110); ctx.lineTo(x0 - 60, 190); ctx.lineTo(x0 - 150, 180); ctx.fill();
-          ctx.fillStyle = '#1d3557';
-          ctx.beginPath(); ctx.moveTo(x0 - 100, 60); ctx.lineTo(x0 - 30, 40); ctx.lineTo(x0 - 30, 260); ctx.lineTo(x0 - 100, 240); ctx.closePath(); ctx.fill();
-          ctx.fillStyle = 'rgba(160,215,255,0.55)'; ctx.fillRect(x0 - 92, 70, 52, 50);
-          for (const ly of [90, 210]) { ctx.beginPath(); ctx.arc(x0 - 140, ly, 9, 0, Math.PI * 2); fillStroke(ctx, '#fff6b0', INK, 2); }
-          label(ctx, 'EXP·01', x0 - 75, 150, 14, '#ffffff');
-        }
-        if (i < 8) {
-          // Enganche entre módulos
-          rr(ctx, x1 - 6, 140, TRAIN.GAP + 12, 20, 4); fillStroke(ctx, '#3d405b', INK, 1.5);
-        }
-        if (level === 'roof') {
-          // Superficie curva del techo
-          rr(ctx, x0, 0, x1 - x0, TRAIN.MOD_W, 10);
-          const g = ctx.createLinearGradient(0, 0, 0, TRAIN.MOD_W);
-          g.addColorStop(0, '#6d7683'); g.addColorStop(0.18, '#9aa5b1'); g.addColorStop(0.5, '#b6c0cc'); g.addColorStop(0.82, '#9aa5b1'); g.addColorStop(1, '#5f6874');
-          fillStroke(ctx, g, INK, 2.5);
-          ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 2;
-          for (let rx = x0 + 40; rx < x1; rx += 60) { ctx.beginPath(); ctx.moveTo(rx, 14); ctx.lineTo(rx, TRAIN.MOD_W - 14); ctx.stroke(); }
-          for (let rx = x0 + 20; rx < x1 - 10; rx += 40) { screw(ctx, rx, 18, 1.8); screw(ctx, rx, TRAIN.MOD_W - 18, 1.8); }
-          ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x0 + 6, 120, x1 - x0 - 12, 18);
-        }
-      }
-      if (level === 'roof') {
-        // Pasarelas superiores
-        for (let i = 0; i < 8; i++) { rr(ctx, xe(i) - 14, 92, TRAIN.GAP + 28, 116, 3); fillStroke(ctx, '#4f5764', INK, 2); }
-      } else {
-        for (let i = 0; i < 8; i++) { rr(ctx, xe(i), 66, TRAIN.GAP, 168, 2); fillStroke(ctx, '#2b2d42', INK, 2); }
-      }
-      return;
-    }
+    void chunk;
     if (id === 'ship') {
-      if (level === 'main') {
-        // Costado visible del casco con línea de flotación
-        ctx.save(); ctx.translate(0, 54); polyPath(ctx, SHIP.MAIN_HULL); fillStroke(ctx, pal.hullDark, INK, 3); ctx.restore();
-        ctx.save(); polyPath(ctx, SHIP.MAIN_HULL); ctx.clip();
-        ctx.restore();
-        ctx.save(); ctx.translate(0, 54); polyPath(ctx, SHIP.MAIN_HULL); ctx.clip();
-        ctx.fillStyle = '#c8323f'; ctx.fillRect(chunk.x, 1080, chunk.w + 200, 30);
-        ctx.restore();
-        polyPath(ctx, SHIP.MAIN_HULL);
-        fillStroke(ctx, vgrad(ctx, 40, 1060, shade(pal.hull, 0.15), pal.hull), INK, 3);
-        ctx.fillStyle = '#f1ede4'; ctx.save(); polyPath(ctx, SHIP.MAIN_HULL); ctx.clip(); ctx.fillRect(chunk.x - 10, 1036, chunk.w + 20, 26); ctx.restore();
-        label(ctx, 'EL FERRY', 2200, 1094, 24, '#f1ede4');
-      } else if (level === 'lower') {
-        polyPath(ctx, SHIP.LOWER_HULL); fillStroke(ctx, '#252d3b', INK, 3);
-        ctx.save(); ctx.translate(0, 30); polyPath(ctx, SHIP.LOWER_HULL); fillStroke(ctx, 'rgba(0,0,0,0.35)', null); ctx.restore();
-        polyPath(ctx, SHIP.LOWER_HULL); fillStroke(ctx, vgrad(ctx, 240, 880, '#3a4456', '#283142'), INK, 3);
-      } else {
-        // Superior: silueta de la principal debajo, en sombra
-        ctx.save(); ctx.globalAlpha = 0.9; polyPath(ctx, SHIP.MAIN_HULL); fillStroke(ctx, shade(pal.hull, -0.3), INK, 2); ctx.restore();
-        ctx.save(); ctx.translate(0, 40); polyPath(ctx, SHIP.UPPER_DECK); fillStroke(ctx, '#cfc6b4', INK, 2); ctx.restore();
-        polyPath(ctx, SHIP.UPPER_DECK); fillStroke(ctx, '#e9e2d3', INK, 2.5);
-      }
+      // Costado visible del casco con línea de flotación (una sola cubierta)
+      ctx.save(); ctx.translate(0, 54); polyPath(ctx, SHIP.HULL); fillStroke(ctx, pal.hullDark, INK, 3); ctx.restore();
+      ctx.save(); ctx.translate(0, 54); polyPath(ctx, SHIP.HULL); ctx.clip();
+      ctx.fillStyle = '#c8323f'; ctx.fillRect(0, 1080, 3600, 30);
+      ctx.restore();
+      polyPath(ctx, SHIP.HULL);
+      fillStroke(ctx, vgrad(ctx, 40, 1060, shade(pal.hull, 0.15), pal.hull), INK, 3);
+      ctx.fillStyle = '#f1ede4'; ctx.save(); polyPath(ctx, SHIP.HULL); ctx.clip(); ctx.fillRect(0, 1036, 3600, 26); ctx.restore();
+      label(ctx, 'EL FERRY', 2200, 1094, 24, '#f1ede4');
       return;
     }
     if (id === 'plane') {
       ctx.save(); ctx.translate(0, 34); polyPath(ctx, PLANE.FUSELAGE); fillStroke(ctx, pal.hullDark, INK, 3); ctx.restore();
       polyPath(ctx, PLANE.FUSELAGE);
-      fillStroke(ctx, vgrad(ctx, 0, 600, '#ffffff', '#d7dee8'), INK, 3);
-      // Ventanillas del costado visible
-      ctx.save(); ctx.translate(0, 34); polyPath(ctx, PLANE.FUSELAGE); ctx.clip(); ctx.restore();
-      for (let wx = 860; wx < 2960; wx += 64) { if (wx > 1500 && wx < 1990) continue; rr(ctx, wx - 7, 608, 14, 16, 6); fillStroke(ctx, '#2f4f75', INK, 1.2); }
-      ctx.fillStyle = pal.trim; ctx.fillRect(560, 628, 2440, 5);
-      // Parabrisas
+      fillStroke(ctx, vgrad(ctx, 150, 915, '#ffffff', '#d7dee8'), INK, 3);
+      for (let wx = 860; wx < 3100; wx += 64) { if (wx > 1640 && wx < 2310) continue; rr(ctx, wx - 7, 922, 14, 16, 6); fillStroke(ctx, '#2f4f75', INK, 1.2); }
+      ctx.fillStyle = pal.trim; ctx.fillRect(800, 944, 2350, 5);
+      // Parabrisas del morro
       ctx.fillStyle = '#1d3557';
-      ctx.beginPath(); ctx.moveTo(140, 230); ctx.lineTo(215, 140); ctx.lineTo(245, 160); ctx.lineTo(190, 240); ctx.closePath(); ctx.fill();
-      ctx.beginPath(); ctx.moveTo(140, 370); ctx.lineTo(215, 460); ctx.lineTo(245, 440); ctx.lineTo(190, 360); ctx.closePath(); ctx.fill();
-      if (level === 'tech') { ctx.save(); polyPath(ctx, PLANE.FUSELAGE); ctx.clip(); ctx.fillStyle = 'rgba(30,38,56,0.82)'; ctx.fillRect(0, 0, 3600, 640); ctx.restore(); }
+      ctx.beginPath(); ctx.moveTo(250, 470); ctx.lineTo(300, 380); ctx.lineTo(330, 396); ctx.lineTo(290, 480); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(250, 630); ctx.lineTo(300, 720); ctx.lineTo(330, 704); ctx.lineTo(290, 620); ctx.closePath(); ctx.fill();
+      return;
+    }
+    if (id === 'market') {
+      // Fachada y acera del edificio
+      ctx.fillStyle = '#5c6b7a'; ctx.fillRect(-120, 1500, MARKET.W + 240, 120);
+      ctx.fillStyle = '#7a8796'; for (let x = -120; x < MARKET.W + 120; x += 80) ctx.fillRect(x, 1500, 76, 8);
+      ctx.save(); ctx.translate(0, 26); polyPath(ctx, MARKET.OUTLINE); fillStroke(ctx, '#8a7f6c', INK, 3); ctx.restore();
+      polyPath(ctx, MARKET.OUTLINE); fillStroke(ctx, pal.hull, INK, 3);
+      // Toldo de la entrada
+      for (let x = 1060; x < 1400; x += 40) { ctx.fillStyle = (x / 40) % 2 ? '#e63946' : '#f8f3e8'; ctx.fillRect(x, 1500, 40, 28); }
+      ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.strokeRect(1060, 1500, 340, 28);
+      label(ctx, 'EL CARRITO', 1230, 1560, 26, '#f8f3e8');
       return;
     }
     // Terminal
@@ -184,8 +127,11 @@ export class MapPainter {
   private paintFloor(ctx: Ctx, r: RoomDef) {
     const rects = [r.rect, ...(r.extra ?? [])];
     const [c0, c1] = this.pal.floor[r.floor] ?? ['#888', '#777'];
+    const outline = this.def.levels.find((l) => l.id === r.level)!.outline[0];
     for (const rc of rects) {
       ctx.save();
+      // El suelo nunca se derrama fuera del casco o del edificio.
+      polyPath(ctx, outline); ctx.clip();
       ctx.beginPath(); ctx.rect(rc.x, rc.y, rc.w, rc.h); ctx.clip();
       ctx.fillStyle = c0;
       ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
@@ -241,8 +187,16 @@ export class MapPainter {
           speckle(ctx, rc.x, rc.y, rc.w, rc.h, rc.w * rc.h / 300, 'rgba(255,255,255,0.04)', seed);
           break;
         }
-        case 'roof': {
-          ctx.fillStyle = vgrad(ctx, rc.y, rc.y + rc.h, '#7e8794', '#6d7683'); ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
+        case 'terrazzo': case 'marketTile': {
+          const s2 = r.floor === 'terrazzo' ? 64 : 48;
+          speckle(ctx, rc.x, rc.y, rc.w, rc.h, rc.w * rc.h / (r.floor === 'terrazzo' ? 70 : 260), 'rgba(90,80,70,0.10)', seed, 1.8);
+          for (let y = rc.y; y < rc.y + rc.h; y += s2) for (let x = rc.x; x < rc.x + rc.w; x += s2) {
+            if ((((x - rc.x) / s2 | 0) + ((y - rc.y) / s2 | 0)) % 2) { ctx.fillStyle = c1; ctx.globalAlpha = 0.35; ctx.fillRect(x, y, s2, s2); ctx.globalAlpha = 1; }
+          }
+          // Juntas finas y regulares
+          ctx.strokeStyle = 'rgba(60,50,40,0.16)'; ctx.lineWidth = 1;
+          for (let x = rc.x; x <= rc.x + rc.w; x += s2) { ctx.beginPath(); ctx.moveTo(x, rc.y); ctx.lineTo(x, rc.y + rc.h); ctx.stroke(); }
+          for (let y = rc.y; y <= rc.y + rc.h; y += s2) { ctx.beginPath(); ctx.moveTo(rc.x, y); ctx.lineTo(rc.x + rc.w, y); ctx.stroke(); }
           break;
         }
         case 'rubber': {
@@ -301,15 +255,37 @@ export class MapPainter {
     ctx.restore();
   }
 
+  /**
+   * Sombras físicas según el tipo de apoyo (luz del noroeste). Una sombra es
+   * solo dibujo: nunca genera colisión ni bloquea la visión.
+   */
   private paintPropShadow(ctx: Ctx, p: PropDef) {
     const { x, y, w, h: d } = p.rect;
-    if (p.h < 6) return;
-    // Proyección moderada hacia el sureste + sombra de contacto
+    const kind = propShadow(p);
+    if (kind === 'none' || kind === 'wall') return;
     ctx.save();
-    ctx.fillStyle = 'rgba(20,12,40,0.16)';
-    rr(ctx, x + 6, y + 5, w, d, 6); ctx.fill();
+    if (kind === 'box') {
+      // Proyección corta al sureste, pegada a la base, con penumbra.
+      const off = Math.min(14, 4 + p.h * 0.08);
+      ctx.fillStyle = 'rgba(20,12,40,0.10)';
+      rr(ctx, x + 2, y + 2, w + off, d + off * 0.6, 6); ctx.fill();
+      ctx.fillStyle = 'rgba(20,12,40,0.16)';
+      rr(ctx, x + 1, y + d - 6, w + off * 0.6, 8, 4); ctx.fill();
+    } else if (kind === 'low') {
+      ctx.fillStyle = 'rgba(20,12,40,0.14)';
+      rr(ctx, x + 2, y + 3, w + 3, d, 6); ctx.fill();
+    } else if (kind === 'legs') {
+      // Sombra suave bajo el tablero y contacto en cada pata.
+      ctx.fillStyle = 'rgba(20,12,40,0.10)';
+      rr(ctx, x + 4, y + 4, w, d, 8); ctx.fill();
+      for (const [lx, ly] of [[x + 6, y + d - 4], [x + w - 6, y + d - 4], [x + 6, y + 6], [x + w - 6, y + 6]]) contactShadow(ctx, lx + 1, ly + 1, 6, 3, 0.3);
+    } else if (kind === 'pole') {
+      contactShadow(ctx, x + w / 2 + 2, y + d - 3, w * 0.75, Math.max(4, d * 0.35), 0.32);
+      // Sombra alargada del mástil hacia el sureste
+      ctx.strokeStyle = 'rgba(20,12,40,0.12)'; ctx.lineWidth = Math.max(4, w * 0.35); ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(x + w / 2, y + d - 3); ctx.lineTo(x + w / 2 + p.h * 0.5, y + d - 3 + p.h * 0.3); ctx.stroke();
+    }
     ctx.restore();
-    contactShadow(ctx, x + w / 2, y + d - 2, w * 0.55, Math.max(6, d * 0.35), 0.22);
   }
 
   private paintMarkings(ctx: Ctx, level: string, chunk: Rect) {
@@ -321,10 +297,11 @@ export class MapPainter {
       if (s.kind === 'emergency') {
         ctx.strokeStyle = 'rgba(230,57,70,0.55)'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]);
         ctx.beginPath(); ctx.arc(s.x, s.y, 30, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
-      } else if (s.kind === 'ladder') {
-        ctx.fillStyle = 'rgba(255,210,63,0.30)'; ctx.beginPath(); ctx.arc(s.x, s.y, 20, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = INK; ctx.font = '900 16px "Baloo 2", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText(s.id.endsWith('_a') ? (this.def.id === 'plane' ? '▼' : '▲') : (this.def.id === 'plane' ? '▲' : '▼'), s.x, s.y);
+      } else if (s.kind === 'checkout') {
+        // Zona de entrega señalizada frente a la caja
+        ctx.fillStyle = 'rgba(255,210,63,0.22)'; rr(ctx, s.x - 70, s.y - 34, 140, 60, 10); ctx.fill();
+        ctx.strokeStyle = 'rgba(29,24,48,0.55)'; ctx.lineWidth = 3; ctx.setLineDash([10, 7]); rr(ctx, s.x - 70, s.y - 34, 140, 60, 10); ctx.stroke(); ctx.setLineDash([]);
+        label(ctx, 'ENTREGA', s.x, s.y - 4, 14, '#1d1830');
       }
     }
     ctx.restore();
@@ -355,7 +332,6 @@ export class MapPainter {
     const light = below?.light ?? 'neutral';
     const base = this.pal.wallFace[light] ?? this.pal.wallFace.neutral;
     if (below && (below.floor === 'metal' || below.floor === 'grate' || below.floor === 'concrete')) return [shade(this.pal.metal, 0.2), this.pal.metal];
-    if (below && (below.floor === 'carpet' || below.floor === 'parquet') && this.def.id === 'train') return ['#b07a4a', '#8a5a33'];
     return base;
   }
 
@@ -393,7 +369,6 @@ export class MapPainter {
         ctx.fillStyle = 'rgba(255,255,255,0.45)';
         ctx.beginPath(); ctx.moveTo(wx - ww / 2, wy + wh); ctx.lineTo(wx - ww / 2 + ww * 0.4, wy); ctx.lineTo(wx - ww / 2 + ww * 0.6, wy); ctx.lineTo(wx - ww / 2 + ww * 0.2, wy + wh); ctx.fill();
         ctx.restore();
-        if (this.def.id === 'train') { ctx.fillStyle = 'rgba(122,46,58,0.85)'; ctx.fillRect(wx - ww / 2 - 4, wy - 2, 8, wh + 4); ctx.fillRect(wx + ww / 2 - 4, wy - 2, 8, wh + 4); }
       }
       // Tapa superior
       ctx.fillStyle = top; ctx.fillRect(r.x, r.y, r.w, cap);

@@ -1,6 +1,8 @@
 import type { PropDef } from '../../shared/maps/types';
 import { Ctx, fillStroke, gauge, hgrad, label, led, obliqueBox, rr, screen, screw, speckle, vgrad } from './draw';
 import { INK, MapPalette, rgba, shade } from './palette';
+import { PRODUCT_BY_ID, SECTIONS } from '../../shared/market';
+import { drawProductIcon } from './products';
 
 export const PROP_PAD = 4;
 
@@ -429,12 +431,33 @@ export function drawProp(ctx: Ctx, p: PropDef, pal: MapPalette, mapId: string) {
     case 'trash': obliqueBox(ctx, w, d, h, '#495057', '#6c757d', w / 2); return;
     case 'extinguisher': rr(ctx, 3, 4, w - 6, d + h - 4, 5); fillStroke(ctx, vgrad(ctx, 0, d + h, '#ff4d5e', '#b51d2a'), INK, 1.6); ctx.fillStyle = '#2b2d42'; ctx.fillRect(w / 2 - 2, 0, 4, 6); ctx.fillStyle = '#fff'; ctx.fillRect(4, d + h * 0.4, w - 8, 5); return;
     case 'lifeVests': for (let x = 2; x < w - 12; x += 16) { rr(ctx, x, 2, 14, d + h - 4, 5); fillStroke(ctx, '#ff7b00', INK, 1.4); ctx.fillStyle = '#f8f9fa'; ctx.fillRect(x + 2, d + h * 0.4, 10, 3); } return;
-    case 'lifering': ctx.lineWidth = 7; ctx.strokeStyle = INK; ctx.beginPath(); ctx.arc(w / 2, (d + h) / 2, Math.min(w, d + h) / 2 - 4, 0, Math.PI * 2); ctx.stroke(); ctx.lineWidth = 5; ctx.setLineDash([5, 5]); ctx.strokeStyle = '#ff4d5e'; ctx.stroke(); ctx.setLineDash([]); return;
+    case 'lifering': {
+      // Colgado de un soporte atornillado a la barandilla: sombra pegada detrás, no en el suelo.
+      const R = Math.min(w, d + h) / 2 - 3, cx = w / 2, cy = (d + h) / 2 + 2;
+      ctx.fillStyle = 'rgba(20,12,40,0.22)'; ctx.beginPath(); ctx.arc(cx + 3, cy + 3, R, 0, Math.PI * 2); ctx.fill();
+      rr(ctx, cx - 4, 0, 8, 10, 2); fillStroke(ctx, '#9aa5b1', INK, 1.4);
+      screw(ctx, cx, 4, 1.4);
+      ctx.strokeStyle = '#5f6b7e'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, 10); ctx.lineTo(cx, cy - R + 2); ctx.stroke();
+      ctx.lineWidth = 7; ctx.strokeStyle = INK; ctx.beginPath(); ctx.arc(cx, cy, R - 2, 0, Math.PI * 2); ctx.stroke();
+      ctx.lineWidth = 5; ctx.strokeStyle = '#f8f3e8'; ctx.stroke();
+      ctx.setLineDash([5, 5]); ctx.strokeStyle = '#ff4d5e'; ctx.stroke(); ctx.setLineDash([]);
+      return;
+    }
     case 'flagPole': case 'mast': case 'cameraMast': case 'antenna': {
       const cx = w / 2;
-      ctx.fillStyle = INK; ctx.fillRect(cx - 3, 6, 6, d + h - 6);
-      ctx.fillStyle = '#c0c8d4'; ctx.fillRect(cx - 2, 6, 4, d + h - 8);
-      if (k === 'flagPole') { ctx.beginPath(); ctx.moveTo(cx + 2, 6); ctx.lineTo(cx + 30, 14); ctx.lineTo(cx + 2, 24); ctx.closePath(); fillStroke(ctx, '#e63946', INK, 1.4); }
+      // Base atornillada a la cubierta: el poste nace de ella, no flota.
+      const baseY = h + d * 0.2;
+      rr(ctx, cx - w / 2 + 1, baseY, w - 2, d * 0.7, 3); fillStroke(ctx, '#5f6b7e', INK, 1.6);
+      screw(ctx, cx - w / 2 + 5, baseY + 4, 1.3); screw(ctx, cx + w / 2 - 5, baseY + 4, 1.3);
+      ctx.fillStyle = INK; ctx.fillRect(cx - 3, 6, 6, baseY - 4);
+      ctx.fillStyle = '#c0c8d4'; ctx.fillRect(cx - 2, 6, 4, baseY - 6);
+      if (k === 'flagPole') {
+        // La bandera se une al mástil por dos anillas y ondea hacia fuera.
+        ctx.beginPath(); ctx.moveTo(cx + 2, 8); ctx.quadraticCurveTo(cx + 18, 4, cx + 34, 12); ctx.quadraticCurveTo(cx + 20, 18, cx + 34, 26); ctx.quadraticCurveTo(cx + 18, 22, cx + 2, 28); ctx.closePath();
+        fillStroke(ctx, '#e63946', INK, 1.4);
+        ctx.fillStyle = '#f1ede4'; ctx.fillRect(cx + 4, 15, 20, 3);
+        for (const yy of [9, 26]) { ctx.beginPath(); ctx.arc(cx, yy, 2.4, 0, Math.PI * 2); ctx.strokeStyle = INK; ctx.lineWidth = 1.2; ctx.stroke(); }
+      }
       if (k === 'antenna') { ctx.beginPath(); ctx.ellipse(cx + 10, 18, 12, 16, -0.3, 0, Math.PI * 2); fillStroke(ctx, '#e9eef5', INK, 1.6); for (let i = 0; i < 3; i++) { ctx.fillStyle = INK; ctx.fillRect(cx - 12, 30 + i * 12, 24, 2); } }
       if (k === 'cameraMast') { rr(ctx, cx - 4, 2, 20, 12, 3); fillStroke(ctx, '#2b2d42', INK, 1.2); }
       led(ctx, cx, 6, '#ff4d5e', 2);
@@ -464,6 +487,94 @@ export function drawProp(ctx: Ctx, p: PropDef, pal: MapPalette, mapId: string) {
       rr(ctx, 0, 0, w, d + h, 3); fillStroke(ctx, k === 'noticeBoard' ? '#b08968' : '#161925', INK, 2);
       if (k === 'noticeBoard') { for (let i = 0; i < 4; i++) { ctx.fillStyle = ['#fff', '#ffd23f', '#8ecae6', '#fff'][i]; ctx.save(); ctx.translate(8 + i * 12, 8 + (i % 2) * 10); ctx.rotate((i - 1.5) * 0.08); ctx.fillRect(0, 0, 11, 13); ctx.restore(); } }
       else { for (let r = 0; r < 4; r++) { ctx.fillStyle = r % 2 ? '#ffd23f' : '#ff8a3d'; ctx.fillRect(6, 6 + r * ((d + h - 12) / 4), w * (0.4 + (r % 3) * 0.15), 3); } }
+      return;
+    }
+    case 'menuBoard': {
+      // Pizarra colgada de la pared con dos alcayatas
+      ctx.fillStyle = 'rgba(20,12,40,0.22)'; rr(ctx, 3, 5, w, d + h - 4, 3); ctx.fill();
+      rr(ctx, 0, 2, w, d + h - 4, 3); fillStroke(ctx, '#2d3a2e', INK, 2);
+      ctx.strokeStyle = '#a0663b'; ctx.lineWidth = 3; ctx.strokeRect(1.5, 3.5, w - 3, d + h - 7);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'; for (let r = 0; r < 4; r++) ctx.fillRect(7, 10 + r * 8, w * (0.4 + (r % 2) * 0.3), 2);
+      return;
+    }
+    case 'magazineRack': {
+      obliqueBox(ctx, w, d, h, pal.woodDark, pal.wood, 3);
+      for (let i = 0; i < 4; i++) { rr(ctx, 4, d + 4 + i * ((h - 8) / 4), w - 8, (h - 8) / 4 - 2, 1); fillStroke(ctx, ['#e63946', '#ffd23f', '#5cc8ff', '#3ddc97'][i], INK, 1); }
+      return;
+    }
+    case 'wallScreen': {
+      ctx.fillStyle = 'rgba(20,12,40,0.2)'; rr(ctx, 3, 4, w, d + h - 4, 3); ctx.fill();
+      rr(ctx, 0, 2, w, d + h - 4, 3); fillStroke(ctx, '#1d2433', INK, 2);
+      screen(ctx, 4, 6, w - 8, d + h - 14, '#5cc8ff');
+      return;
+    }
+    case 'jumpSeat': seat(ctx, w, d, h, pal.fabricAlt, false); return;
+    case 'marketFridge': {
+      // Mostrador refrigerado con cristal discreto y productos de su sección
+      obliqueBox(ctx, w, d, h, '#e9eef2', '#c9d3db', 4);
+      rr(ctx, 4, d + 6, w - 8, h - 22, 3); fillStroke(ctx, 'rgba(180,225,255,0.55)', INK, 1.4);
+      const sec = String(p.label ?? '');
+      const prods = Object.values(PRODUCT_BY_ID).filter((x) => x.section === sec);
+      const n = Math.max(1, Math.floor((w - 16) / 26));
+      for (let i = 0; i < n; i++) { const pr = prods[i % Math.max(1, prods.length)]; if (pr) drawProductIcon(ctx, pr, 14 + i * 26, d + 6 + (h - 22) / 2, 20); }
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.fillRect(6, d + 8, w - 12, 3);
+      ctx.fillStyle = '#2b2d42'; ctx.fillRect(2, d + h - 12, w - 4, 10);
+      const meta = SECTIONS.find((x) => x.id === sec);
+      if (meta) label(ctx, meta.name.toUpperCase(), w / 2, d + h - 7, 8, '#f8f3e8');
+      return;
+    }
+    case 'marketShelf': {
+      // Lineal alto y opaco: estantes con productos en la cara frontal (sur) y la tapa con los de la cara norte.
+      let faces: { n: string[]; s: string[]; sec?: string } = { n: [], s: [] };
+      try { faces = JSON.parse(String(p.label ?? '{}')); } catch { /* sin datos */ }
+      obliqueBox(ctx, w, d, h, '#dfe4ea', '#f4f6f8', 3);
+      const rows = 3;
+      const front = faces.s.map((id) => PRODUCT_BY_ID[id]).filter(Boolean);
+      for (let r = 0; r < rows; r++) {
+        const yy = d + 6 + r * ((h - 12) / rows);
+        ctx.fillStyle = '#c3cbd5'; ctx.fillRect(3, yy + (h - 12) / rows - 4, w - 6, 3);
+        const step = 22;
+        for (let x = 14, i = r; x < w - 10; x += step, i++) { const pr = front[i % Math.max(1, front.length)]; if (pr) drawProductIcon(ctx, pr, x, yy + (h - 12) / rows / 2 - 1, 15); }
+      }
+      const back = faces.n.map((id) => PRODUCT_BY_ID[id]).filter(Boolean);
+      for (let x = 12, i = 0; x < w - 8; x += 18, i++) { const pr = back[i % Math.max(1, back.length)]; if (pr) { ctx.globalAlpha = 0.85; drawProductIcon(ctx, pr, x, d / 2, 11); ctx.globalAlpha = 1; } }
+      ctx.fillStyle = '#e63946'; ctx.fillRect(0, d + h - 6, w, 4);
+      return;
+    }
+    case 'cashDesk': {
+      obliqueBox(ctx, w, d, h, '#f4efe6', '#c9a27a', 4);
+      // Cinta transportadora y escáner
+      rr(ctx, 8, 6, w * 0.6, d - 14, 3); fillStroke(ctx, '#2b2d42', INK, 1.4);
+      ctx.strokeStyle = '#4a4e69'; ctx.lineWidth = 1; for (let x = 12; x < w * 0.6 + 4; x += 8) { ctx.beginPath(); ctx.moveTo(x, 8); ctx.lineTo(x, d - 10); ctx.stroke(); }
+      rr(ctx, w * 0.68, 8, 26, d - 18, 3); fillStroke(ctx, '#adb5bd', INK, 1.3);
+      ctx.fillStyle = '#ff4d5e'; ctx.fillRect(w * 0.68 + 4, d / 2 - 5, 18, 2);
+      rr(ctx, w - 40, -18, 30, 22, 3); fillStroke(ctx, '#1d2433', INK, 1.6); screen(ctx, w - 37, -15, 24, 15, '#3ddc97');
+      if (p.label === 'cerrada') { rr(ctx, w / 2 - 34, d + 6, 68, 16, 4); fillStroke(ctx, '#e63946', INK, 1.4); label(ctx, 'CERRADA', w / 2, d + 14, 9, '#ffffff'); }
+      else { rr(ctx, w / 2 - 30, d + 6, 60, 16, 4); fillStroke(ctx, '#3ddc97', INK, 1.4); label(ctx, 'CAJA 1', w / 2, d + 14, 9, '#1d1830'); }
+      return;
+    }
+    case 'cartStack': {
+      for (let i = 0; i < 4; i++) {
+        const ox = i * 16;
+        ctx.strokeStyle = INK; ctx.lineWidth = 2.4;
+        rr(ctx, ox + 4, 6, 56, d + h * 0.55, 4); ctx.stroke();
+        ctx.strokeStyle = '#c0c8d4'; ctx.lineWidth = 1.4; for (let x = ox + 10; x < ox + 58; x += 7) { ctx.beginPath(); ctx.moveTo(x, 8); ctx.lineTo(x, d + h * 0.55 + 4); ctx.stroke(); }
+        ctx.fillStyle = '#e63946'; ctx.fillRect(ox + 2, 4, 60, 4);
+        ctx.fillStyle = INK; ctx.beginPath(); ctx.arc(ox + 12, d + h - 4, 4, 0, Math.PI * 2); ctx.arc(ox + 52, d + h - 4, 4, 0, Math.PI * 2); ctx.fill();
+      }
+      return;
+    }
+    case 'basketStack': {
+      for (let i = 0; i < 4; i++) { rr(ctx, 4, d + h - 14 - i * 9, w - 8, 14, 3); fillStroke(ctx, '#e63946', INK, 1.4); }
+      ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(w / 2, d + h - 42, 12, Math.PI, 0); ctx.stroke();
+      return;
+    }
+    case 'promoStand': {
+      obliqueBox(ctx, w, d, h, '#ffd23f', '#f4a300', 4);
+      rr(ctx, 8, -20, w - 16, 22, 4); fillStroke(ctx, '#e63946', INK, 1.6);
+      label(ctx, 'OFERTA', w / 2, -9, 11, '#ffffff');
+      const prs = ['galletas', 'mermelada', 'aceite', 'cacao'].map((id) => PRODUCT_BY_ID[id]);
+      prs.forEach((pr, i) => pr && drawProductIcon(ctx, pr, 18 + i * ((w - 30) / 3), d + h / 2, 20));
       return;
     }
     case 'gateSign': {
@@ -529,6 +640,12 @@ export function drawFlat(ctx: Ctx, p: PropDef, pal: MapPalette) {
       break;
     }
     case 'exitDoor': {
+      if (p.label === 'salida') {
+        // Salida de seguridad del supermercado (pared este)
+        rr(ctx, 0, 0, w, h, 3); fillStroke(ctx, '#2bb24c', INK, 2);
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(3, h / 2 - 2, w - 6, 4);
+        break;
+      }
       rr(ctx, 6, 8, w - 12, h - 10, 8); fillStroke(ctx, vgrad(ctx, 0, h, '#e3e9f1', '#c3cddb'), INK, 2);
       rr(ctx, w / 2 - 14, 16, 28, 18, 8); fillStroke(ctx, '#9fd3ea', INK, 1.6);
       ctx.fillStyle = '#e63946'; ctx.fillRect(10, h - 14, w - 20, 4);
@@ -537,8 +654,40 @@ export function drawFlat(ctx: Ctx, p: PropDef, pal: MapPalette) {
     }
     case 'departureBoard': {
       rr(ctx, 0, 6, w, h - 8, 4); fillStroke(ctx, '#111522', INK, 2);
-      const rows = ['TREN · EL EXPRESO · ANDÉN 3', 'BARCO · EL FERRY · MUELLE 1', 'AVIÓN · EL VUELO · PUERTA B7'];
-      rows.forEach((r, i) => label(ctx, r, 14, 18 + i * 12, 9, ['#ffd23f', '#5cc8ff', '#ff8a3d'][i], 'left'));
+      const rows = ['BARCO · EL FERRY · MUELLE 1 · EMBARCANDO', 'AVIÓN · EL VUELO · PUERTA B7 · A TIEMPO', 'SÚPER · EL CARRITO · ABIERTO HASTA LAS 22:00'];
+      rows.forEach((r, i) => label(ctx, r, 14, 18 + i * 12, 9, ['#5cc8ff', '#ff8a3d', '#3ddc97'][i], 'left'));
+      break;
+    }
+    case 'sectionSign': {
+      // Rótulo de sección pintado en el suelo, con icono propio
+      const meta = SECTIONS.find((x) => x.id === p.label);
+      const name = meta?.name ?? String(p.label ?? '');
+      ctx.font = '900 13px "Baloo 2", sans-serif';
+      const tw = ctx.measureText(name.toUpperCase()).width + 34;
+      rr(ctx, 0, 0, tw, 22, 11); fillStroke(ctx, 'rgba(29,24,48,0.78)', null);
+      const pr = Object.values(PRODUCT_BY_ID).find((x) => x.section === p.label);
+      if (pr) drawProductIcon(ctx, pr, 12, 11, 14);
+      label(ctx, name.toUpperCase(), 22, 12, 12, '#f8f3e8', 'left');
+      break;
+    }
+    case 'queueLine': {
+      ctx.strokeStyle = 'rgba(255,210,63,0.9)'; ctx.lineWidth = 4; ctx.setLineDash([16, 10]);
+      ctx.beginPath(); ctx.moveTo(0, 2); ctx.lineTo(w, 2); ctx.moveTo(0, h - 2); ctx.lineTo(w, h - 2); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(29,24,48,0.55)';
+      for (let x = 30; x < w; x += 90) { ctx.beginPath(); ctx.moveTo(x, h / 2 - 7); ctx.lineTo(x + 14, h / 2); ctx.lineTo(x, h / 2 + 7); ctx.closePath(); ctx.fill(); }
+      label(ctx, 'COLA', 40, h / 2, 12, 'rgba(29,24,48,0.75)');
+      break;
+    }
+    case 'entranceDoor': {
+      rr(ctx, 0, 0, w, h, 3); fillStroke(ctx, 'rgba(170,220,255,0.8)', INK, 2);
+      ctx.fillStyle = INK; ctx.fillRect(w / 2 - 1, 0, 2, h);
+      break;
+    }
+    case 'rug': {
+      rr(ctx, 0, 0, w, h, 26); fillStroke(ctx, '#7a3b52', INK, 2);
+      rr(ctx, 12, 12, w - 24, h - 24, 18); ctx.strokeStyle = '#f2cc8f'; ctx.lineWidth = 3; ctx.stroke();
+      label(ctx, 'THE WORST TRAVEL', w / 2, h / 2 - 8, 28, 'rgba(242,204,143,0.85)');
+      label(ctx, 'salidas · llegadas · líos', w / 2, h / 2 + 22, 14, 'rgba(242,204,143,0.7)');
       break;
     }
     default:

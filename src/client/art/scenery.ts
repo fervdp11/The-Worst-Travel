@@ -21,76 +21,14 @@ function wrap(w: number, h: number, x: number, y: number, r: number, fn: (x: num
 }
 
 export function sceneryKeys(map: string): string[] {
-  if (map === 'train') return ['sc_ground', 'sc_track', 'sc_canopy', 'sc_tunnel'];
+  if (map === 'market') return ['sc_city'];
   if (map === 'ship') return ['sc_water', 'sc_waves', 'sc_foam', 'sc_islands'];
   if (map === 'plane') return ['sc_land', 'sc_cloudlo', 'sc_cloudhi'];
   return ['sc_plaza'];
 }
 
 export function generateScenery(scene: Phaser.Scene, map: string) {
-  if (map === 'train') {
-    tile(scene, 'sc_ground', 1024, 1024, (ctx) => {
-      ctx.fillStyle = '#6a9a52'; ctx.fillRect(0, 0, 1024, 1024);
-      for (let i = 0; i < 70; i++) {
-        const x = hash2(i, 1) * 1024, y = hash2(i, 2) * 1024, r = 40 + hash2(i, 3) * 120;
-        wrap(1024, 1024, x, y, r, (xx, yy) => { ctx.fillStyle = i % 3 ? 'rgba(80,130,60,0.45)' : 'rgba(150,180,80,0.35)'; ctx.beginPath(); ctx.ellipse(xx, yy, r, r * 0.6, 0, 0, Math.PI * 2); ctx.fill(); });
-      }
-      // Campos de cultivo en franjas
-      for (let k = 0; k < 3; k++) {
-        const fx = hash2(k, 9) * 1024, fy = 140 + k * 330;
-        wrap(1024, 1024, fx, fy, 260, (xx, yy) => {
-          ctx.save(); ctx.translate(xx, yy); ctx.rotate(0.05);
-          ctx.fillStyle = ['#c9a14a', '#9bbf5a', '#b98b3e'][k]; ctx.fillRect(-220, -70, 440, 140);
-          ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 3;
-          for (let l = -210; l < 220; l += 16) { ctx.beginPath(); ctx.moveTo(l, -70); ctx.lineTo(l, 70); ctx.stroke(); }
-          ctx.restore();
-        });
-      }
-      // Camino de tierra
-      ctx.strokeStyle = '#b5915e'; ctx.lineWidth = 26;
-      ctx.beginPath(); ctx.moveTo(0, 600); ctx.bezierCurveTo(300, 520, 600, 700, 1024, 600); ctx.stroke();
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 2; ctx.stroke();
-      speckle(ctx, 0, 0, 1024, 1024, 5000, 'rgba(255,255,255,0.06)', 7, 2);
-      speckle(ctx, 0, 0, 1024, 1024, 5000, 'rgba(0,40,0,0.08)', 8, 2);
-      for (let i = 0; i < 140; i++) {
-        const x = hash2(i, 11) * 1024, y = hash2(i, 12) * 1024;
-        ctx.fillStyle = ['#ffd23f', '#ffffff', '#ff8fab'][i % 3];
-        ctx.beginPath(); ctx.arc(x, y, 2.2, 0, Math.PI * 2); ctx.fill();
-      }
-    });
-    tile(scene, 'sc_track', 256, 200, (ctx) => {
-      ctx.fillStyle = '#8b8378'; ctx.fillRect(0, 20, 256, 160);
-      speckle(ctx, 0, 20, 256, 160, 1400, 'rgba(0,0,0,0.2)', 3, 2.4);
-      speckle(ctx, 0, 20, 256, 160, 900, 'rgba(255,255,255,0.15)', 4, 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 20, 256, 6); ctx.fillRect(0, 174, 256, 6);
-      for (let x = 8; x < 256; x += 32) { rr(ctx, x, 40, 18, 120, 3); fillStroke(ctx, '#6b4f35', INK, 1.5); }
-      for (const y of [70, 128]) { ctx.fillStyle = '#4a4e57'; ctx.fillRect(0, y - 3, 256, 9); ctx.fillStyle = '#c9ced8'; ctx.fillRect(0, y - 3, 256, 3); }
-    });
-    tile(scene, 'sc_canopy', 1024, 512, (ctx) => {
-      for (let i = 0; i < 26; i++) {
-        const x = hash2(i, 21) * 1024, y = 40 + hash2(i, 22) * 432, r = 26 + hash2(i, 23) * 34;
-        wrap(1024, 512, x, y, r + 30, (xx, yy) => {
-          contactShadow(ctx, xx + 20, yy + 18, r * 1.1, r * 0.7, 0.35);
-          for (let k = 0; k < 5; k++) {
-            const a = (k / 5) * Math.PI * 2;
-            ctx.beginPath(); ctx.arc(xx + Math.cos(a) * r * 0.45, yy + Math.sin(a) * r * 0.4, r * 0.6, 0, Math.PI * 2);
-            fillStroke(ctx, k % 2 ? '#2d6a4f' : '#357a5a', INK, 2);
-          }
-          ctx.beginPath(); ctx.arc(xx - r * 0.2, yy - r * 0.25, r * 0.35, 0, Math.PI * 2); ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fill();
-        });
-      }
-      // Postes de catenaria
-      for (let x = 60; x < 1024; x += 256) {
-        contactShadow(ctx, x + 14, 470, 10, 5, 0.4);
-        rr(ctx, x - 5, 420, 10, 54, 3); fillStroke(ctx, '#5c677d', INK, 1.6);
-      }
-    });
-    tile(scene, 'sc_tunnel', 256, 64, (ctx) => {
-      const g = ctx.createLinearGradient(0, 0, 256, 0);
-      g.addColorStop(0, 'rgba(8,6,16,0)'); g.addColorStop(0.18, 'rgba(8,6,16,0.82)'); g.addColorStop(0.82, 'rgba(8,6,16,0.82)'); g.addColorStop(1, 'rgba(8,6,16,0)');
-      ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 64);
-    });
-  } else if (map === 'ship') {
+  if (map === 'ship') {
     tile(scene, 'sc_water', 512, 512, (ctx) => {
       ctx.fillStyle = vgrad(ctx, 0, 512, '#1f78ad', '#1b6a9a'); ctx.fillRect(0, 0, 512, 512);
       for (let i = 0; i < 90; i++) {
@@ -154,6 +92,17 @@ export function generateScenery(scene: Phaser.Scene, map: string) {
     });
     clouds('sc_cloudlo', 16, 0.75, 71);
     clouds('sc_cloudhi', 9, 0.9, 91);
+  } else if (map === 'market') {
+    // Calle con aparcamiento y aceras alrededor del edificio
+    tile(scene, 'sc_city', 512, 512, (ctx) => {
+      ctx.fillStyle = '#4a5563'; ctx.fillRect(0, 0, 512, 512);
+      speckle(ctx, 0, 0, 512, 512, 2600, 'rgba(255,255,255,0.05)', 21, 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = 4;
+      for (let x = 0; x < 512; x += 128) { ctx.beginPath(); ctx.moveTo(x + 8, 60); ctx.lineTo(x + 8, 200); ctx.stroke(); }
+      ctx.fillStyle = '#7a8796'; ctx.fillRect(0, 300, 512, 40);
+      ctx.fillStyle = 'rgba(0,0,0,0.12)'; for (let x = 0; x < 512; x += 64) ctx.fillRect(x, 300, 2, 40);
+      for (let i = 0; i < 6; i++) { const x = 40 + i * 80; ctx.beginPath(); ctx.arc(x, 420, 22, 0, Math.PI * 2); fillStroke(ctx, '#4f7d3a', INK, 2); }
+    });
   } else {
     tile(scene, 'sc_plaza', 512, 512, (ctx) => {
       ctx.fillStyle = '#4a4e69'; ctx.fillRect(0, 0, 512, 512);
@@ -165,7 +114,7 @@ export function generateScenery(scene: Phaser.Scene, map: string) {
 }
 
 export function sceneryColor(map: string): number {
-  return map === 'train' ? 0x6a9a52 : map === 'ship' ? 0x1f78ad : map === 'plane' ? 0x8ec5ff : 0x2b2d42;
+  return map === 'market' ? 0x4a5563 : map === 'ship' ? 0x1f78ad : map === 'plane' ? 0x8ec5ff : 0x2b2d42;
 }
 
 export { shade };

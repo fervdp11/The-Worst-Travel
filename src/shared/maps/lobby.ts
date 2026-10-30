@@ -1,41 +1,57 @@
 import { HW, MapBuilder, R, VW } from './builder';
-import type { MapDef } from './types';
+import type { MapDef, NpcSeat } from './types';
 
-/** Sala de espera: terminal de viajes con vestuarios de personal. Plano propio y fijo. */
+/**
+ * Sala de espera: vestíbulo de salidas de The Worst Travel. Una sola sala
+ * amplia con el centro despejado para conversar, bancos a los lados, panel de
+ * salidas, mostrador de facturación y un rincón de vestuario para personalizar.
+ */
 export function buildLobby(): MapDef {
   const b = new MapBuilder();
   const H = 'hall';
-  b.hwall(H, 0, 1600, 0, HW, { kind: 'hull', windows: [120, 260, 400, 540, 680, 820] });
-  b.hwall(H, 0, 1600, 880, 24, { kind: 'hull', face: false });
-  b.vwall(H, 0, 56, 880, 24, { kind: 'hull' });
-  b.vwall(H, 1576, 56, 880, 24, { kind: 'hull' });
-  b.vwall(H, 1100, 56, 520, VW, { kind: 'partition', openings: [{ at: 300, door: { id: 'd_vest', name: 'Vestuarios' } }] });
-  b.hwall(H, 1100, 1576, 520, 36, { kind: 'partition', openings: [{ at: 1340, door: { id: 'd_vestS', name: 'Vestuarios (sur)' } }] });
-  b.room('vestibulo', 'Vestíbulo de salidas', H, R(24, 56, 1076, 824), 'checker', 'warm', '#ffb347', 'z_hall', [R(1100, 556, 476, 324)]);
-  b.room('vestuarios', 'Vestuarios del personal', H, R(1118, 56, 458, 464), 'parquet', 'warm', '#ff8a3d', 'z_vest');
-  b.prop(H, 'departureBoard', 380, 0, 360, 56, 0, { solid: false, flat: true, anim: 'screen' });
-  b.st('kiosk', H, 560, 120, 'kiosk', 'Panel de salidas');
-  for (let k = 0; k < 3; k++) {
-    b.prop(H, 'gateSign', 120 + k * 330, 300, 200, 40, 70, { variant: k });
-  }
-  for (let r = 0; r < 2; r++) for (let k = 0; k < 3; k++) b.prop(H, 'bench', 120 + k * 330, 520 + r * 160, 200, 40, 30);
-  b.prop(H, 'plant', 50, 90, 34, 34, 56);
-  b.prop(H, 'plant', 1040, 90, 34, 34, 56);
-  b.prop(H, 'plant', 50, 800, 34, 34, 56);
-  b.prop(H, 'cafeKiosk', 1200, 640, 200, 70, 50, { anim: 'steam' });
-  for (let k = 0; k < 5; k++) b.prop(H, 'locker', 1140 + k * 56, 56, 50, 30, 74, { variant: k });
-  b.prop(H, 'mirror', 1450, 56, 90, 14, 70, { solid: false });
-  b.prop(H, 'wardrobe', 1460, 300, 90, 60, 70);
-  b.st('wardrobe', H, 1500, 400, 'wardrobe', 'Vestuario: personalizar uniforme');
-  b.st('wardrobe2', H, 1300, 140, 'wardrobe', 'Taquillas del personal');
-  b.prop(H, 'bench', 1200, 300, 34, 140, 30);
+  const npcs: NpcSeat[] = [];
+  const win: number[] = [];
+  for (let x = 120; x < 1700; x += 150) if (x < 640 || x > 1160) win.push(x);
+  b.hwall(H, 0, 1800, 0, HW, { kind: 'hull', windows: win });
+  b.hwall(H, 0, 1800, 980, 24, { kind: 'hull', face: false });
+  b.vwall(H, 0, 56, 980, 24, { kind: 'hull' });
+  b.vwall(H, 1776, 56, 980, 24, { kind: 'hull' });
+  b.room('vestibulo', 'Vestíbulo de salidas', H, R(24, 56, 1752, 924), 'terrazzo', 'warm', '#ffb347', 'z_hall');
+
+  // Panel de salidas y quiosco informativo (pared norte)
+  b.prop(H, 'departureBoard', 680, 0, 440, 56, 0, { solid: false, flat: true, anim: 'screen' });
+  b.st('kiosk', H, 900, 120, 'kiosk', 'Panel de salidas');
+  b.prop(H, 'rug', 620, 360, 560, 300, 0, { solid: false, flat: true });
+
+  // Mostrador de facturación (oeste)
+  b.prop(H, 'receptionDesk', 80, 150, 300, 60, 42, { anim: 'screen' });
+  npcs.push({ id: 'n_fact', level: H, x: 230, y: 120, facing: 1, pose: 'stand', act: 'talk' });
+  b.prop(H, 'luggage', 400, 170, 50, 36, 34);
+
+  // Bancos a los lados (el centro queda libre)
+  for (const bx of [110, 1290]) for (const by of [560, 720]) b.prop(H, 'bench', bx, by, 380, 40, 30);
+  npcs.push({ id: 'n_banco1', level: H, x: 200, y: 590, facing: 1, pose: 'sit', act: 'read' });
+  npcs.push({ id: 'n_banco2', level: H, x: 1560, y: 750, facing: -1, pose: 'sit', act: 'phone' });
+  for (const [px, py] of [[40, 80], [1720, 80], [40, 920], [1720, 920], [530, 640], [1234, 640]]) b.prop(H, 'plant', px, py, 34, 34, 54);
+
+  // Vestuario del personal (este): personalización
+  b.prop(H, 'wardrobe', 1520, 140, 130, 60, 70);
+  b.prop(H, 'mirror', 1680, 46, 70, 10, 46, { solid: false, mount: 'wall' });
+  b.st('wardrobe', H, 1585, 248, 'wardrobe', 'Vestuario: personalizar uniforme', { range: 90 });
+  for (let k = 0; k < 3; k++) b.prop(H, 'locker', 1300 + k * 56, 82, 50, 30, 74, { variant: k });
+  b.st('wardrobe2', H, 1356, 160, 'wardrobe', 'Taquillas del personal');
+
+  // Cafetería (sureste) y señalética
+  b.prop(H, 'cafeKiosk', 1380, 880, 220, 60, 46, { anim: 'steam' });
+  b.prop(H, 'gateSign', 120, 880, 220, 40, 60, { variant: 0 });
+
   return b.finish({
     id: 'lobby',
-    name: 'Terminal de salidas',
-    levels: [{ id: H, name: 'Terminal', index: 0, bounds: R(-300, -300, 2200, 1500), outline: [[{ x: 0, y: 0 }, { x: 1600, y: 0 }, { x: 1600, y: 904 }, { x: 0, y: 904 }]] }],
-    ladders: [], vents: [], escapistLinks: [], cameras: [], zones: [{ id: 'z_hall', name: 'Vestíbulo', level: H }, { id: 'z_vest', name: 'Vestuarios', level: H }],
-    doorGroups: [], interference: [], sabotages: [], tasks: [], npcs: [],
-    spawn: [0, 1, 2, 3, 4, 5].flatMap((k) => [{ level: H, x: 300 + k * 90, y: 430 }, { level: H, x: 340 + k * 90, y: 470 }]),
+    name: 'Vestíbulo de salidas',
+    levels: [{ id: H, name: 'Vestíbulo', index: 0, bounds: R(-300, -300, 2400, 1600), outline: [[{ x: 0, y: 0 }, { x: 1800, y: 0 }, { x: 1800, y: 1004 }, { x: 0, y: 1004 }]] }],
+    vents: [], escapistLinks: [], cameras: [], zones: [{ id: 'z_hall', name: 'Vestíbulo', level: H }],
+    doorGroups: [], interference: [], sabotages: [], tasks: [], npcs,
+    spawn: [0, 1, 2, 3, 4, 5].flatMap((k) => [{ level: H, x: 720 + k * 72, y: 470 }, { level: H, x: 756 + k * 72, y: 540 }]),
     safePoints: [], meetingRoom: 'vestibulo',
     texts: {
       vehicle: 'Terminal', short: 'ESPERA', description: '', routes: '', arrivalTitle: '', arrivalText: '', murderTitle: '', murderText: '',

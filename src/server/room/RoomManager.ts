@@ -1,4 +1,5 @@
 import { MAX_PLAYERS, MIN_PLAYERS } from '../../shared/constants';
+import { migrateMapId } from '../../shared/maps';
 import type { MapId } from '../../shared/maps/types';
 import { PROTOCOL_VERSION } from '../../shared/protocol';
 import type { ActionMsg } from '../../shared/protocol';
@@ -8,7 +9,6 @@ import type { PresetId } from '../../shared/settings';
 import { Conn, Room } from './Room';
 
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const MAPS: MapId[] = ['train', 'ship', 'plane'];
 
 interface Session {
   pid: string;
@@ -96,7 +96,8 @@ export class ClientSession {
     switch (ev) {
       case 'create': {
         if (room) room.removeMember(pid);
-        const mapId = MAPS.includes(d.mapId) ? d.mapId : 'train';
+        const mode = d.mode === 'market' ? 'market' : 'travel';
+        const mapId = migrateMapId(d.mapId, mode);
         const preset: PresetId = d.preset === 'clasico' ? 'clasico' : d.preset === 'personalizado' ? 'personalizado' : 'equilibrado';
         const r = this.mgr.createRoom(false, { mapId, maxPlayers: Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, Number(d.maxPlayers) || 8)), preset });
         this.enter(r, String(d.name ?? ''));
@@ -113,7 +114,7 @@ export class ClientSession {
       }
       case 'practice': {
         if (room) room.removeMember(pid);
-        const mapId = MAPS.includes(d.mapId) ? d.mapId : 'train';
+        const mapId = migrateMapId(d.mapId);
         const team: Team = d.team === 'impostor' ? 'impostor' : 'worker';
         const role: RoleId | null = d.role && ROLE_BY_ID[d.role as RoleId]?.team === team ? d.role : null;
         const r = this.mgr.createRoom(true, { mapId, maxPlayers: 1, preset: 'equilibrado' }, team, role);
@@ -128,7 +129,7 @@ export class ClientSession {
     }
     if (!room) return this.err('noroom', 'No estás en ninguna sala.');
     switch (ev) {
-      case 'settings': { const e = room.onSettings(pid, d.patch, d.mapId); if (e) this.err('settings', e); return; }
+      case 'settings': { const e = room.onSettings(pid, d.patch, d.mapId, d.mode); if (e) this.err('settings', e); return; }
       case 'start': { const e = room.onStart(pid); if (e) this.err('start', e); return; }
       case 'cancel': room.onCancel(pid); return;
       case 'custom': room.onCustom(pid, d); return;

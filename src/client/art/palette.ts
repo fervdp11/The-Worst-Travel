@@ -4,9 +4,11 @@
  * - Luz principal desde el noroeste: caras superiores claras, frontales medias,
  *   sombras proyectadas hacia el sureste con desplazamiento (6, 4) y alfa 0,22.
  * - Muros: tapa superior de 14 u + cara frontal de 42 u dentro del propio grosor.
- * - Personaje: cuerpo 34 × 40 u; con gorra ≈ 54 u de alto. Colisión: círculo de 12 u en los pies.
+ * - Personaje: cuerpo 34 × 40 u; con gorra ≈ 54 u de alto. Colisión: cuerpo de radio 14 u.
+ * - Sombras: de contacto en la base de cada apoyo; proyección suave al sureste
+ *   solo para objetos altos de suelo; los montados en pared no proyectan en el suelo.
  * - Tipografías: Baloo 2 (títulos, rótulos) y Nunito (texto).
- * - Tren: tapicería burdeos/verde azulado, latón y madera cálida; técnicos en acero frío.
+ * - Supermercado: baldosa clara, lineales blancos con remates de color por sección y caja cálida.
  * - Barco: madera pintada crema, acero gris azulado, rojo náutico, teca húmeda y mar.
  * - Avión: paneles claros, plásticos gris perla, aluminio y luz indirecta azulada.
  */
@@ -43,7 +45,8 @@ const FLOORS_BASE: Record<string, [string, string]> = {
   tile: ['#d9dde3', '#c3c9d1'],
   lino: ['#9fb2c4', '#8ea2b5'],
   deck: ['#c08a55', '#a97848'],
-  roof: ['#7e8794', '#6d7683'],
+  terrazzo: ['#e9e1d3', '#d6ccbb'],
+  marketTile: ['#eef0ec', '#dfe3de'],
   checker: ['#e8dcc8', '#4a4e69'],
   rubber: ['#3f4654', '#363c48'],
   concrete: ['#8a8f96', '#7c8188'],
@@ -51,13 +54,6 @@ const FLOORS_BASE: Record<string, [string, string]> = {
 };
 
 export const PALETTES: Record<string, MapPalette> = {
-  train: {
-    floor: { ...FLOORS_BASE, carpet: ['#7a2e3a', '#6a2733'], lino: ['#8fa3a3', '#7e9292'] },
-    wallFace: { warm: ['#e3cfa8', '#c9b28a'], cold: ['#b8c4cf', '#9fadba'], neutral: ['#d8ccb8', '#bfb29c'], dim: ['#c9b79c', '#ab9a80'], exterior: ['#9aa5b1', '#7e8996'] },
-    wallTop: '#3a2b33', hull: '#7a2e3a', hullDark: '#4d1a25', trim: '#d9a441', metal: '#8d99ae', metalDark: '#5f6b7e',
-    wood: '#a0663b', woodDark: '#6e4325', fabric: '#2a6f6f', fabricAlt: '#7a2e3a', glass: '#9fd3ea', accent: '#d9a441',
-    warmLight: 'rgba(255,196,120,0.20)', coldLight: 'rgba(140,200,255,0.16)',
-  },
   ship: {
     floor: { ...FLOORS_BASE, carpet: ['#25406b', '#1f375d'], deck: ['#b98552', '#a4733f'] },
     wallFace: { warm: ['#f1ede4', '#d9d2c3'], cold: ['#c9d3dc', '#aebbc7'], neutral: ['#ebe5d8', '#d2cab9'], dim: ['#d8cfbd', '#bdb39f'], exterior: ['#f1ede4', '#d0c8b8'] },
@@ -79,6 +75,14 @@ export const PALETTES: Record<string, MapPalette> = {
     wood: '#a0663b', woodDark: '#6e4325', fabric: '#81b29a', fabricAlt: '#e07a5f', glass: '#a9d6e5', accent: '#f2cc8f',
     warmLight: 'rgba(255,205,140,0.18)', coldLight: 'rgba(150,200,255,0.14)',
   },
+};
+
+PALETTES.market = {
+  floor: { ...FLOORS_BASE },
+  wallFace: { warm: ['#f4efe6', '#ddd4c3'], cold: ['#e6edf1', '#cdd8de'], neutral: ['#f1ece2', '#d9d0bf'], dim: ['#ddd4c3', '#c4baa7'], exterior: ['#f4efe6', '#ddd4c3'] },
+  wallTop: '#3d405b', hull: '#e8e2d6', hullDark: '#b8ad9a', trim: '#e63946', metal: '#b8c0cc', metalDark: '#7d8899',
+  wood: '#c08a55', woodDark: '#8a5f36', fabric: '#2f6fe0', fabricAlt: '#e63946', glass: '#cfeffd', accent: '#e63946',
+  warmLight: 'rgba(255,214,150,0.16)', coldLight: 'rgba(170,220,255,0.16)',
 };
 
 export const UI = {

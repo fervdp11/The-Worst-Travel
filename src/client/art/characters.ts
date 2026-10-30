@@ -228,7 +228,7 @@ function simple(w: number, h: number, fn: (ctx: CanvasRenderingContext2D) => voi
 }
 
 /** Gorros del responsable del viaje según el vehículo. */
-function respHat(kind: 'train' | 'ship' | 'plane') {
+function respHat(kind: 'ship' | 'plane') {
   return simple(44, 30, (ctx) => {
     const cx = 22, by = 26;
     if (kind === 'ship') {
@@ -269,10 +269,8 @@ export function generateCharacterTextures(scene: Phaser.Scene) {
     add(`ch_ghost_${i}`, drawBody({ jacket: col.hex, jacketDark: col.dark, skin: '#dfe7ff', mark: col.mark, markColor: '#fff' }));
   });
   PASSENGER_STYLES.forEach((s, i) => add(`px_body_${i}`, drawBody(s)));
-  add('resp_body_train', drawBody({ jacket: '#20294a', jacketDark: '#121a33', skin: SKIN[1], buttons: true, tie: '#d62828', mark: 'star', markColor: '#e8c15a' }));
   add('resp_body_ship', drawBody({ jacket: '#f3f4f7', jacketDark: '#c9ced8', skin: SKIN[3], buttons: true, tie: '#20375c', mark: 'star', markColor: '#e8c15a', collar: '#20375c' }));
   add('resp_body_plane', drawBody({ jacket: '#1b2638', jacketDark: '#0e1624', skin: SKIN[2], buttons: true, tie: '#0b1220', mark: 'diamond', markColor: '#e8c15a' }));
-  add('resp_hat_train', respHat('train'));
   add('resp_hat_ship', respHat('ship'));
   add('resp_hat_plane', respHat('plane'));
   ACCESSORIES.forEach((a, i) => COLORS.forEach((col, ci) => { if (i === 3 || i === 4 || i === 6 || i === 7) add(`ch_acc_${i}_${ci}`, drawAccessory(i, col.hex)); }));
@@ -285,6 +283,12 @@ export function generateCharacterTextures(scene: Phaser.Scene) {
     ctx.beginPath(); ctx.arc(10, 8, 4, Math.PI, 0); fillStroke(ctx, '#f4f1e8', INK, 1.2);
     rr(ctx, 16, 3, 6, 7, 1.5); fillStroke(ctx, '#ff9f43', INK, 1.2);
     ctx.fillStyle = '#ff6b6b'; ctx.beginPath(); ctx.arc(10, 6, 1.6, 0, Math.PI * 2); ctx.fill();
+  }));
+  add('ch_bag', simple(18, 22, (ctx) => {
+    // Bolsa de compra cerrada: no deja ver el producto.
+    ctx.strokeStyle = INK; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(9, 7, 4.5, Math.PI, 0); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(2, 7); ctx.lineTo(16, 7); ctx.lineTo(15, 20); ctx.lineTo(3, 20); ctx.closePath(); fillStroke(ctx, '#f4efe6', INK, 1.6);
+    ctx.fillStyle = '#e63946'; ctx.fillRect(3, 11, 12, 3);
   }));
   add('ch_tool', simple(20, 10, (ctx) => {
     ctx.strokeStyle = INK; ctx.lineWidth = 4.2; ctx.beginPath(); ctx.moveTo(3, 7); ctx.lineTo(14, 4); ctx.stroke();

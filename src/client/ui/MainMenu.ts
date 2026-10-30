@@ -1,4 +1,4 @@
-import type { MapId } from '../../shared/maps/types';
+import type { GameMode, MapId } from '../../shared/maps/types';
 import { ROLES, RoleId, Team } from '../../shared/roles';
 import { fillStroke, makeCanvas, rr, vgrad } from '../art/draw';
 import { INK } from '../art/palette';
@@ -7,7 +7,7 @@ import { store } from '../state';
 import type { App } from './App';
 import { clear, h, ICONS, modal, toast, uiRoot } from './dom';
 import { showHowTo } from './HowTo';
-import { mapCards } from './MapCards';
+import { mapCards, modeCards } from './MapCards';
 import { showPrefs } from './SettingsUI';
 
 /** Fondo animado ligero: tres viajes en paralaje con sprites precalculados. */
@@ -98,8 +98,8 @@ export function showMainMenu(app: App) {
   const screen = h('div', { class: 'screen' }, bg.el,
     h('div', { class: 'menu' },
       h('div', { class: 'left' },
-        h('div', { class: 'logo' }, h('span', { class: 'the' }, 'THE'), h('span', { class: 'main' }, 'Worst ', h('span', { class: 'w' }, 'Travel')), h('span', { class: 'tag' }, 'TREN · BARCO · AVIÓN')),
-        h('p', { class: 'muted', style: 'max-width:520px;text-align:center;margin:0;font-weight:700' }, 'Atiende al pasaje, repara averías y descubre quién quiere arruinar el viaje antes de que llegue hasta el responsable.'),
+        h('div', { class: 'logo' }, h('span', { class: 'the' }, 'THE'), h('span', { class: 'main' }, 'Worst ', h('span', { class: 'w' }, 'Travel')), h('span', { class: 'tag' }, 'BARCO · AVIÓN · SUPERMERCADO')),
+        h('p', { class: 'muted', style: 'max-width:520px;text-align:center;margin:0;font-weight:700' }, 'Atiende al pasaje y repara averías en el barco o el avión, o haz la compra en el súper: descubre quién finge saber lo que hace.'),
       ),
       h('div', { class: 'panel card' },
         h('div', { class: 'field' }, h('label', null, 'Tu nombre'), nameInput),
@@ -123,10 +123,15 @@ export function showMainMenu(app: App) {
 }
 
 function createDialog(app: App) {
-  let map: MapId = 'train';
+  let mode: GameMode = 'travel';
+  let map: MapId = 'ship';
   let cap = 8;
   let preset = 'equilibrado';
-  const cards = mapCards(map, (id) => { map = id; cards.set(id); audio.sfx('click'); });
+  const mapBox = h('div');
+  let cards = mapCards(map, (id) => { map = id; cards.set(id); audio.sfx('click'); }, mode);
+  const renderMaps = () => { clear(mapBox); cards = mapCards(map, (id) => { map = id; cards.set(id); audio.sfx('click'); }, mode); mapBox.append(cards.el); };
+  const modes = modeCards(mode, (m) => { mode = m; map = m === 'market' ? 'market' : 'ship'; modes.set(m); renderMaps(); presetRow.classList.toggle('hidden', m === 'market'); audio.sfx('click'); });
+  renderMaps();
   const capVal = h('span', { class: 'val' }, String(cap));
   const capInput = h('input', { type: 'range', min: 4, max: 12, step: 1, value: cap }) as HTMLInputElement;
   capInput.addEventListener('input', () => { cap = Number(capInput.value); capVal.textContent = String(cap); });
@@ -137,13 +142,15 @@ function createDialog(app: App) {
     for (const [id, name] of presets) presetTabs.append(h('button', { class: `tab${preset === id ? ' active' : ''}`, onclick: () => { preset = id; renderTabs(); } }, name));
   };
   renderTabs();
+  const presetRow = h('div', { class: 'field' }, h('label', null, 'Preset de especialidades (Viaje)'), presetTabs);
   const m = modal('Crear sala', h('div', { class: 'col' },
-    h('div', { class: 'field' }, h('label', null, 'Vehículo'), cards.el),
+    h('div', { class: 'field' }, h('label', null, '1. Modo'), modes.el),
+    h('div', { class: 'field' }, h('label', null, '2. Mapa'), mapBox),
     h('div', { class: 'slider' }, h('span', { class: 'name' }, 'Plazas'), capVal, capInput, h('span', { class: 'help' }, 'Entre 4 y 12 personas. Siempre hay un único impostor.')),
-    h('div', { class: 'field' }, h('label', null, 'Preset de reglas'), presetTabs),
+    presetRow,
   ), {
     wide: true,
-    actions: [h('button', { class: 'btn primary big', onclick: async () => { m.close(); toast('Creando sala…'); await app.createRoom(map, cap, preset); }, html: `${ICONS.play}<span>CREAR</span>` })],
+    actions: [h('button', { class: 'btn primary big', onclick: async () => { m.close(); toast('Creando sala…'); await app.createRoom(map, cap, preset, mode); }, html: `${ICONS.play}<span>CREAR</span>` })],
   });
 }
 
@@ -163,10 +170,12 @@ export function joinDialog(app: App, prefill = '') {
 }
 
 function practiceDialog(app: App) {
-  let map: MapId = 'train';
+  let map: MapId = 'ship';
   let team: Team = 'worker';
   let role: RoleId | null = null;
-  const cards = mapCards(map, (id) => { map = id; cards.set(id); });
+  const cards = mapCards(map, (id) => { map = id; cards.set(id); extra.set(id); roleField.classList.toggle('hidden', false); }, 'travel');
+  const extra = mapCards('market', (id) => { map = id; cards.set(id); extra.set(id); roleField.classList.toggle('hidden', true); }, 'market');
+  extra.set(map);
   const teamTabs = h('div', { class: 'tabs' });
   const roleSel = h('select', { 'aria-label': 'Especialidad' }) as HTMLSelectElement;
   const fillRoles = () => {
@@ -180,11 +189,13 @@ function practiceDialog(app: App) {
     for (const [id, name] of [['worker', 'TRABAJADOR'], ['impostor', 'IMPOSTOR']] as [Team, string][]) teamTabs.append(h('button', { class: `tab${team === id ? ' active' : ''}`, onclick: () => { team = id; role = null; renderTeam(); fillRoles(); } }, name));
   };
   roleSel.addEventListener('change', () => { role = (roleSel.value || null) as RoleId | null; });
+  const roleField = h('div', { class: 'field grow' }, h('label', null, 'Especialidad (solo Viaje)'), roleSel);
   renderTeam(); fillRoles();
   const m = modal('Práctica individual', h('div', { class: 'col' },
     h('p', { class: 'muted', style: 'margin:0' }, 'Modo PRÁCTICA: un solo jugador, sin multijugador. Sirve para recorrer el mapa y probar tareas y sabotajes (en práctica también los trabajadores pueden provocar averías).'),
-    h('div', { class: 'field' }, h('label', null, 'Vehículo'), cards.el),
-    h('div', { class: 'row wrap' }, h('div', { class: 'field' }, h('label', null, 'Bando'), teamTabs), h('div', { class: 'field grow' }, h('label', null, 'Especialidad'), roleSel)),
+    h('div', { class: 'field' }, h('label', null, 'Viaje'), cards.el),
+    h('div', { class: 'field' }, h('label', null, 'Supermercado'), extra.el),
+    h('div', { class: 'row wrap' }, h('div', { class: 'field' }, h('label', null, 'Bando'), teamTabs), roleField),
   ), {
     wide: true,
     actions: [h('button', { class: 'btn primary big', onclick: async () => { m.close(); await app.startPractice(map, team, role); }, html: `${ICONS.play}<span>EMPEZAR PRÁCTICA</span>` })],

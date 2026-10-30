@@ -6,9 +6,9 @@ export type C = CanvasRenderingContext2D;
 
 export interface Mat { base: string; dark: string; trim: string; screen: string; accent: string }
 
-/** Materiales de las carcasas por vehículo: latón/madera, acero pintado, plástico claro. */
+/** Materiales de las carcasas por mapa: acero pintado (barco), plástico claro (avión), laminado (súper). */
 export const MATS: Record<MapId, Mat> = {
-  train: { base: '#7b4a2e', dark: '#4e2d1b', trim: '#d9a441', screen: '#1d2b22', accent: '#c8323f' },
+  market: { base: '#e9e4da', dark: '#b9ae9b', trim: '#e63946', screen: '#13222f', accent: '#e63946' },
   ship: { base: '#3a5378', dark: '#22334f', trim: '#e63946', screen: '#0f2233', accent: '#f1ede4' },
   plane: { base: '#d6dde8', dark: '#9aa7b8', trim: '#2f6fb3', screen: '#132235', accent: '#2f6fb3' },
 };

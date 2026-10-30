@@ -5,6 +5,7 @@ import { randomId } from '../../shared/rng';
 import { ROLE_BY_ID } from '../../shared/roles';
 import type { RoomSettings } from '../../shared/settings';
 import type { Game } from './Game';
+import { refreshVentPanel } from './interactions';
 import { fxAround } from './interactions';
 import type { GPlayer } from './types';
 import { camJammed, hiddenFromOthers } from './visibility';
@@ -296,7 +297,7 @@ export function abilityTick(g: Game) {
           let reading: { x: number; y: number; l: string; gt: number; none?: boolean };
           if (tr.target.startsWith('p:')) {
             const t = g.players.get(tr.target.slice(2));
-            if (!t || !t.alive || t.left || t.state === 'vent' || t.timed?.kind === 'ladder') reading = { x: 0, y: 0, l: '', gt, none: true };
+            if (!t || !t.alive || t.left || t.state === 'vent') reading = { x: 0, y: 0, l: '', gt, none: true };
             else reading = { x: Math.round(t.x), y: Math.round(t.y), l: t.level, gt };
           } else {
             const d = g.decoys.find((x) => `d:${x.id}` === tr.target);
@@ -339,9 +340,11 @@ export function abilityTick(g: Game) {
   g.interference = g.interference.filter((i) => i.endsGt > gt);
   if (ni !== g.interference.length) { g.dirtyPub = true; refreshCamPanels(g); }
   g.escapistLinks = g.escapistLinks.filter((e) => e.endsGt > gt);
-  for (const p of g.players.values()) {
-    if (p.state === 'vent' && p.sysPanel?.kind === 'vent' && g.tickNo % 15 === 0) {
-      g.openPanel(p, { kind: 'vent', vent: p.vent!.id, links: g.ventLinksFor(p.vent!.id) });
+  // Si caduca un enlace del Escapista, las flechas de quien esté dentro se actualizan.
+  if (g.tickNo % 15 === 0) for (const p of g.players.values()) {
+    if (p.state === 'vent' && !p.timed && p.sysPanel?.kind === 'vent' && p.vent) {
+      const now = g.ventLinksFor(p.vent.id).map((l) => l.id).join(',');
+      if (now !== (p.sysPanel.arrows ?? []).join(',')) refreshVentPanel(g, p);
     }
   }
 }

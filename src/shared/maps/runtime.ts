@@ -1,13 +1,23 @@
-import { Rect, RectGrid, dist2, rectContains, segmentRectT, segmentRectTT, clamp } from '../geometry';
+import { Rect, RectGrid, clamp, dist2, rectContains, segmentRectT, segmentRectTT } from '../geometry';
+import { propCollider, propOccluder } from './objects';
 import type { DoorDef, MapDef, RoomDef, StationDef, ZoneDef } from './types';
 
-export const PLAYER_RADIUS = 12;
+/** Radio del cuerpo jugable (cápsula vista desde arriba, no un punto en los pies). */
+export const PLAYER_RADIUS = 14;
+/** Profundidad máxima que la luz entra en un muro para iluminar su cara (nunca lo cruza). */
+export const WALL_LIGHT_DEPTH = 64;
+
+export interface Seg { ax: number; ay: number; bx: number; by: number; half: number }
 
 export interface Solid {
   rect: Rect;
   kind: 'wall' | 'prop' | 'door';
   door?: string;
+  /** Objeto de origen (para depuración). */
+  prop?: string;
   occludes: boolean;
+  /** Muro lineal diagonal: la colisión y la visión usan el segmento, no la caja. */
+  seg?: Seg;
 }
 
 /** Estado de puertas cerradas consultado por colisión y visión. */
@@ -16,6 +26,26 @@ export interface DoorState {
 }
 export const ALL_OPEN: DoorState = { isClosed: () => false };
 
+/** Punto más cercano de un segmento (con su parámetro). */
+function closestOnSeg(s: Seg, x: number, y: number): { x: number; y: number } {
+  const vx = s.bx - s.ax, vy = s.by - s.ay;
+  const l2 = vx * vx + vy * vy;
+  const t = l2 > 0 ? clamp(((x - s.ax) * vx + (y - s.ay) * vy) / l2, 0, 1) : 0;
+  return { x: s.ax + vx * t, y: s.ay + vy * t };
+}
+
+/** Intersección de un rayo (origen + t·dir) con un segmento; devuelve t o -1. */
+function raySeg(ox: number, oy: number, dx: number, dy: number, s: Seg): number {
+  const ex = s.bx - s.ax, ey = s.by - s.ay;
+  const den = dx * ey - dy * ex;
+  if (Math.abs(den) < 1e-9) return -1;
+  const wx = s.ax - ox, wy = s.ay - oy;
+  const t = (wx * ey - wy * ex) / den;
+  const u = (wx * dy - wy * dx) / den;
+  if (t < 0 || u < -1e-6 || u > 1 + 1e-6) return -1;
+  return t;
+}
+
 export class LevelRuntime {
   solids: Solid[] = [];
   occluders: Solid[] = [];
@@ -23,7 +53,7 @@ export class LevelRuntime {
   occGrid = new RectGrid<Solid>(128);
   rooms: RoomDef[] = [];
   bounds: Rect;
-  /** Caja que envuelve el contorno del vehículo en este nivel (límite para fantasmas). */
+  /** Caja que envuelve el contorno del vehículo (límite para expulsados). */
   hullBox: Rect;
   constructor(public id: string, def: MapDef) {
     const lv = def.levels.find((l) => l.id === id)!;
@@ -33,18 +63,25 @@ export class LevelRuntime {
       x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
     }
     this.hullBox = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-    for (const w of def.walls) if (w.level === id) this.addSolid({ rect: w.rect, kind: 'wall', occludes: w.occludes });
-    for (const p of def.props) if (p.level === id && p.solid) this.addSolid({ rect: p.rect, kind: 'prop', occludes: false });
+    for (const w of def.walls) if (w.level === id) this.addSolid({ rect: w.rect, kind: 'wall', occludes: w.occludes, seg: w.seg });
+    for (const p of def.props) {
+      if (p.level !== id) continue;
+      const col = propCollider(p);
+      if (col) this.addSolid({ rect: col, kind: 'prop', prop: p.id, occludes: false });
+      const occ = propOccluder(p);
+      if (occ) this.addOccluder({ rect: occ, kind: 'prop', prop: p.id, occludes: true });
+    }
     for (const d of def.doors) if (d.level === id) this.addSolid({ rect: d.rect, kind: 'door', door: d.id, occludes: true });
     this.rooms = def.rooms.filter((r) => r.level === id);
   }
   private addSolid(s: Solid) {
     this.solids.push(s);
     this.solidGrid.add(s);
-    if (s.occludes) {
-      this.occluders.push(s);
-      this.occGrid.add(s);
-    }
+    if (s.occludes) this.addOccluder(s);
+  }
+  private addOccluder(s: Solid) {
+    this.occluders.push(s);
+    this.occGrid.add(s);
   }
 }
 
@@ -61,6 +98,9 @@ export class MapRuntime {
     for (const d of def.doors) this.doors.set(d.id, d);
     for (const z of def.zones) this.zones.set(z.id, z);
   }
+
+  /** Nivel jugable único del mapa. */
+  get mainLevel(): string { return this.def.levels[0].id; }
 
   level(id: string): LevelRuntime {
     const l = this.levels.get(id);
@@ -86,6 +126,13 @@ export class MapRuntime {
     return best;
   }
 
+  /** Punto más cercano del sólido a (x, y). */
+  private nearest(s: Solid, x: number, y: number): { x: number; y: number; pad: number } {
+    if (s.seg) { const c = closestOnSeg(s.seg, x, y); return { x: c.x, y: c.y, pad: s.seg.half }; }
+    const rc = s.rect;
+    return { x: clamp(x, rc.x, rc.x + rc.w), y: clamp(y, rc.y, rc.y + rc.h), pad: 0 };
+  }
+
   /** ¿Choca un círculo con algún sólido? */
   collides(level: string, x: number, y: number, r: number, doors: DoorState): boolean {
     const lv = this.level(level);
@@ -93,15 +140,16 @@ export class MapRuntime {
     lv.solidGrid.query({ x: x - r, y: y - r, w: r * 2, h: r * 2 }, tmpArr);
     for (const s of tmpArr) {
       if (s.kind === 'door' && !doors.isClosed(s.door!)) continue;
-      const cx = clamp(x, s.rect.x, s.rect.x + s.rect.w), cy = clamp(y, s.rect.y, s.rect.y + s.rect.h);
-      if (dist2(x, y, cx, cy) < r * r - 0.01) return true;
+      const c = this.nearest(s, x, y);
+      const rr = r + c.pad;
+      if (dist2(x, y, c.x, c.y) < rr * rr - 0.01) return true;
     }
     return false;
   }
 
   /**
-   * Movimiento con colisión de un círculo pequeño a la altura de los pies.
-   * Subdivide para evitar atravesar paredes y desliza por las superficies.
+   * Movimiento con colisión del cuerpo (círculo). Subdivide el paso para no
+   * atravesar esquinas a velocidad alta y desliza por las superficies.
    */
   move(level: string, x: number, y: number, dx: number, dy: number, r: number, doors: DoorState): { x: number; y: number } {
     const lv = this.level(level);
@@ -117,23 +165,26 @@ export class MapRuntime {
         let pushed = false;
         for (const s of tmpArr) {
           if (s.kind === 'door' && !doors.isClosed(s.door!)) continue;
-          const rc = s.rect;
-          const cx = clamp(x, rc.x, rc.x + rc.w), cy = clamp(y, rc.y, rc.y + rc.h);
-          const ddx = x - cx, ddy = y - cy;
+          const c = this.nearest(s, x, y);
+          const rr = r + c.pad;
+          const ddx = x - c.x, ddy = y - c.y;
           const d2 = ddx * ddx + ddy * ddy;
-          if (d2 >= r * r) continue;
+          if (d2 >= rr * rr) continue;
           if (d2 > 1e-6) {
             const d = Math.sqrt(d2);
-            x = cx + (ddx / d) * r;
-            y = cy + (ddy / d) * r;
-          } else {
+            x = c.x + (ddx / d) * rr;
+            y = c.y + (ddy / d) * rr;
+          } else if (!s.seg) {
             // Centro dentro del rectángulo: sal por el lado más cercano.
+            const rc = s.rect;
             const left = x - rc.x, right = rc.x + rc.w - x, top = y - rc.y, bottom = rc.y + rc.h - y;
             const m = Math.min(left, right, top, bottom);
             if (m === left) x = rc.x - r;
             else if (m === right) x = rc.x + rc.w + r;
             else if (m === top) y = rc.y - r;
             else y = rc.y + rc.h + r;
+          } else {
+            x -= sx; y -= sy;
           }
           pushed = true;
         }
@@ -144,14 +195,20 @@ export class MapRuntime {
     return { x: clamp(x, b.x, b.x + b.w), y: clamp(y, b.y, b.y + b.h) };
   }
 
-  /** Línea de visión entre dos puntos del mismo nivel (paredes y puertas cerradas). */
+  /** Línea de visión entre dos puntos del mismo nivel (muros, oclusores altos y puertas cerradas). */
   los(level: string, x0: number, y0: number, x1: number, y1: number, doors: DoorState): boolean {
     const lv = this.level(level);
     tmpArr.length = 0;
     lv.occGrid.query({ x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) }, tmpArr);
+    const dx = x1 - x0, dy = y1 - y0;
     for (const s of tmpArr) {
       if (s.kind === 'door' && !doors.isClosed(s.door!)) continue;
-      // Si el origen está dentro del propio muro (cámaras montadas en pared) no cuenta.
+      if (s.seg) {
+        const t = raySeg(x0, y0, dx, dy, s.seg);
+        if (t >= 0 && t < 1) return false;
+        continue;
+      }
+      // Si el origen está dentro del propio sólido (cámaras montadas en pared) no cuenta.
       if (rectContains(s.rect, x0, y0)) continue;
       const t = segmentRectT(x0, y0, x1, y1, s.rect);
       if (t >= 0 && t < 1) return false;
@@ -160,55 +217,78 @@ export class MapRuntime {
   }
 
   /**
-   * Polígono de visibilidad desde (ox, oy). Los rayos atraviesan el primer muro
-   * que tocan hasta su cara opuesta para que las caras frontales se vean iluminadas,
-   * pero nunca revelan el espacio del otro lado.
+   * Polígono de visibilidad exacto desde (ox, oy).
+   *
+   * Cada rayo se corta en la primera arista de oclusor que toca (intersección
+   * analítica, no una rejilla), así las aristas rectas producen bordes rectos.
+   * Para que la cara visible de un muro no quede negra, el rayo entra en el
+   * sólido alcanzado hasta su cara opuesta o como máximo `WALL_LIGHT_DEPTH`,
+   * recorriendo la unión de sólidos solapados; nunca sale al otro lado.
+   * Devuelve [x0, y0, x1, y1, ...] en orden angular.
    */
-  visibility(level: string, ox: number, oy: number, radius: number, doors: DoorState, out: number[] = [], baseRays = 72): number[] {
+  visibility(level: string, ox: number, oy: number, radius: number, doors: DoorState, out: number[] = [], baseRays = 180): number[] {
     const lv = this.level(level);
     const area = { x: ox - radius, y: oy - radius, w: radius * 2, h: radius * 2 };
     const occ: Solid[] = [];
     lv.occGrid.query(area, occ);
-    const active = occ.filter((s) => !(s.kind === 'door' && !doors.isClosed(s.door!)));
+    const rects: Rect[] = [];
+    const segs: Seg[] = [];
+    for (const s of occ) {
+      if (s.kind === 'door' && !doors.isClosed(s.door!)) continue;
+      if (s.seg) { segs.push(s.seg); continue; }
+      if (rectContains(s.rect, ox, oy)) continue;
+      rects.push(s.rect);
+    }
     const angles: number[] = [];
     for (let i = 0; i < baseRays; i++) angles.push((i / baseRays) * Math.PI * 2 - Math.PI);
-    for (const s of active) {
-      const r = s.rect;
-      const corners = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]];
-      for (const [cx, cy] of corners) {
-        if (dist2(cx, cy, ox, oy) > radius * radius * 1.1) continue;
-        const a = Math.atan2(cy - oy, cx - ox);
-        angles.push(a - 0.002, a + 0.002);
-      }
-    }
+    const r2 = radius * radius * 1.05;
+    const addCorner = (cx: number, cy: number) => {
+      if (dist2(cx, cy, ox, oy) > r2) return;
+      const a = Math.atan2(cy - oy, cx - ox);
+      angles.push(a - 1e-4, a, a + 1e-4);
+    };
+    for (const r of rects) { addCorner(r.x, r.y); addCorner(r.x + r.w, r.y); addCorner(r.x, r.y + r.h); addCorner(r.x + r.w, r.y + r.h); }
+    for (const s of segs) { addCorner(s.ax, s.ay); addCorner(s.bx, s.by); }
     angles.sort((a, b) => a - b);
     out.length = 0;
     const tt: [number, number] = [0, 0];
     let lastA = -10;
     for (const a of angles) {
-      if (a - lastA < 0.0005) continue;
+      if (a - lastA < 2e-5) continue;
       lastA = a;
       const dx = Math.cos(a), dy = Math.sin(a);
       let best = radius;
-      let bestExit = radius;
-      for (const s of active) {
-        if (rectContains(s.rect, ox, oy)) continue;
-        if (!segmentRectTT(ox, oy, dx, dy, s.rect, tt)) continue;
+      let bestIsSeg = false;
+      for (const r of rects) {
+        if (!segmentRectTT(ox, oy, dx, dy, r, tt)) continue;
         const tin = Math.max(0, tt[0]);
-        if (tin < best) {
-          best = tin;
-          bestExit = tt[1];
-        }
+        if (tin < best) { best = tin; bestIsSeg = false; }
+      }
+      for (const s of segs) {
+        const t = raySeg(ox, oy, dx, dy, s);
+        if (t >= 0 && t < best) { best = t; bestIsSeg = true; }
       }
       let t = best;
-      if (best < radius) {
-        // Atraviesa el muro alcanzado hasta su salida (sin pasar por otros muros).
-        let exit = Math.min(bestExit, radius);
-        for (const s of active) {
-          if (!segmentRectTT(ox, oy, dx, dy, s.rect, tt)) continue;
-          if (tt[0] > best + 0.5 && tt[0] < exit) exit = tt[0];
+      if (best < radius && !bestIsSeg) {
+        // Recorre la unión de rectángulos desde el impacto, sin pasar de su salida.
+        const cap = Math.min(radius, best + WALL_LIGHT_DEPTH);
+        let cur = best;
+        for (let guard = 0; guard < 8; guard++) {
+          let next = cur;
+          for (const r of rects) {
+            if (!segmentRectTT(ox, oy, dx, dy, r, tt)) continue;
+            if (tt[0] <= cur + 0.01 && tt[1] > next) next = tt[1];
+          }
+          if (next <= cur + 0.01) break;
+          cur = next;
+          if (cur >= cap) break;
         }
-        t = exit;
+        // Un casco diagonal dentro del muro también detiene la luz.
+        for (const s of segs) {
+          const ts = raySeg(ox, oy, dx, dy, s);
+          if (ts > best && ts < cur) cur = ts;
+        }
+        t = Math.min(cur, cap);
       }
       out.push(ox + dx * t, oy + dy * t);
     }
@@ -228,12 +308,12 @@ export class MapRuntime {
 
   /** Busca la posición libre más cercana (para restaurar tras transiciones). */
   nearestFree(level: string, x: number, y: number, doors: DoorState = ALL_OPEN): { x: number; y: number } {
-    if (!this.collides(level, x, y, PLAYER_RADIUS + 1, doors)) return { x, y };
+    if (!this.collides(level, x, y, PLAYER_RADIUS + 1, doors) && this.insideRooms(level, x, y)) return { x, y };
     for (let rad = 8; rad < 400; rad += 8) {
       for (let k = 0; k < 16; k++) {
         const a = (k / 16) * Math.PI * 2;
         const px = x + Math.cos(a) * rad, py = y + Math.sin(a) * rad;
-        if (!this.collides(level, px, py, PLAYER_RADIUS + 1, doors) && this.insideRooms(level, px, py)) return { x: px, y: py };
+        if (!this.collides(level, px, py, PLAYER_RADIUS + 1, doors) && this.insideRooms(level, px, py) && this.los(level, x, y, px, py, doors)) return { x: px, y: py };
       }
     }
     return { x, y };

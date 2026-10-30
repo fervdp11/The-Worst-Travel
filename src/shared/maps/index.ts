@@ -1,14 +1,14 @@
 import { buildLobby } from './lobby';
 import { buildPlane } from './plane';
 import { MapRuntime } from './runtime';
+import { buildMarket } from './market';
 import { buildShip } from './ship';
-import { buildTrain } from './train';
-import type { AnyMapId, MapDef, MapId } from './types';
+import type { AnyMapId, GameMode, MapDef, MapId, TravelMapId } from './types';
 
 const builders: Record<AnyMapId, () => MapDef> = {
-  train: buildTrain,
   ship: buildShip,
   plane: buildPlane,
+  market: buildMarket,
   lobby: buildLobby,
 };
 
@@ -35,7 +35,23 @@ export function getRuntime(id: AnyMapId): MapRuntime {
   return r;
 }
 
-export const MAP_IDS: MapId[] = ['train', 'ship', 'plane'];
+export const MAP_IDS: MapId[] = ['ship', 'plane', 'market'];
+export const TRAVEL_MAPS: TravelMapId[] = ['ship', 'plane'];
+
+export function isMapId(v: unknown): v is MapId {
+  return typeof v === 'string' && (MAP_IDS as string[]).includes(v);
+}
+
+/** Modo de juego al que pertenece cada mapa. */
+export function modeOf(id: MapId): GameMode {
+  return id === 'market' ? 'market' : 'travel';
+}
+
+/** Migra un mapa guardado o recibido (p. ej. el antiguo tren) a uno válido. */
+export function migrateMapId(v: unknown, mode?: GameMode): MapId {
+  if (isMapId(v) && (!mode || modeOf(v) === mode)) return v;
+  return mode === 'market' ? 'market' : 'ship';
+}
 
 /** Completa datos derivados: puntos seguros por sala. */
 function finalize(m: MapDef) {

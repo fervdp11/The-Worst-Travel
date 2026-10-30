@@ -2,7 +2,7 @@ import { getMap } from '../src/shared/maps';
 import { validateMap } from '../src/shared/maps/validate';
 
 let fail = false;
-for (const id of ['train', 'ship', 'plane', 'lobby'] as const) {
+for (const id of ['ship', 'plane', 'market', 'lobby'] as const) {
   const t0 = Date.now();
   const rep = validateMap(getMap(id));
   console.log(`${id}: ${rep.ok ? 'OK' : 'ERRORES'} (${rep.reachableCells} celdas, ${Date.now() - t0} ms)`);

@@ -1,40 +1,55 @@
 import type Phaser from 'phaser';
 import { makeCanvas } from '../art/draw';
+import { idleParts } from '../art/compose';
 
 let texSource: Phaser.Textures.TextureManager | null = null;
-export function setPortraitTextures(t: Phaser.Textures.TextureManager) { texSource = t; }
+export function setPortraitTextures(t: Phaser.Textures.TextureManager) { texSource = t; cache.clear(); }
 
 function src(key: string): CanvasImageSource | null {
   if (!texSource || !texSource.exists(key)) return null;
   return texSource.get(key).getSourceImage() as CanvasImageSource;
 }
 
-/** Retrato a partir de las mismas texturas del personaje (sin dibujar arte nuevo). */
-export function portrait(color: number, acc: number, size = 64, opts: { ghost?: boolean; resp?: string; flip?: boolean } = {}): HTMLCanvasElement {
+interface PortraitOpts { ghost?: boolean; resp?: string; flip?: boolean }
+
+/** Retratos cacheados por configuración de aspecto y tamaño (no se recompone por mensaje). */
+const cache = new Map<string, HTMLCanvasElement>();
+
+/** Retrato con el MISMO compositor que el personaje del mundo, en pose de reposo. */
+export function portrait(color: number, acc: number, size = 64, opts: PortraitOpts = {}): HTMLCanvasElement {
+  const key = `${color}|${acc}|${size}|${opts.ghost ? 1 : 0}|${opts.resp ?? ''}|${opts.flip ? 1 : 0}`;
+  let base = cache.get(key);
+  if (!base) {
+    base = makeCanvas(size * 2, size * 2);
+    drawPortrait(base, color, acc, opts);
+    // Solo se cachea cuando las texturas ya existen.
+    if (texSource) cache.set(key, base);
+  }
   const c = makeCanvas(size * 2, size * 2);
-  drawPortrait(c, color, acc, opts);
+  c.getContext('2d')!.drawImage(base, 0, 0);
   return c;
 }
 
-export function drawPortrait(c: HTMLCanvasElement, color: number, acc: number, opts: { ghost?: boolean; resp?: string; flip?: boolean } = {}) {
+/**
+ * Dibuja el personaje compuesto en un lienzo cuadrado. El punto de apoyo queda
+ * centrado abajo y la escala es uniforme (64 u de mundo = ancho del lienzo).
+ */
+export function drawPortrait(c: HTMLCanvasElement, color: number, acc: number, opts: PortraitOpts = {}) {
   const ctx = c.getContext('2d')!;
   ctx.clearRect(0, 0, c.width, c.height);
   const scale = c.width / 64;
   ctx.save();
   if (opts.flip) { ctx.translate(c.width, 0); ctx.scale(-1, 1); }
   ctx.scale(scale, scale);
-  const body = src(opts.resp ? `resp_body_${opts.resp}` : opts.ghost ? `ch_ghost_${color}` : `ch_body_${color}`);
-  const shadow = src('ch_shadow');
-  if (shadow) ctx.drawImage(shadow, 12, 52, 40, 16);
-  const foot = src('ch_foot');
-  if (foot && !opts.ghost) { ctx.drawImage(foot, 18, 54, 14, 10); ctx.drawImage(foot, 32, 54, 14, 10); }
-  if (body) ctx.drawImage(body, 10, 6, 44, 50);
-  const hand = src('ch_hand');
-  if (hand) { ctx.drawImage(hand, 6, 36, 10, 10); ctx.drawImage(hand, 48, 36, 10, 10); }
-  let hatKey: string | null = null;
-  if (opts.resp) hatKey = `resp_hat_${opts.resp}`;
-  else if (acc !== 9) hatKey = [3, 4, 6, 7].includes(acc) ? `ch_acc_${acc}_${color}` : `ch_acc_${acc}`;
-  const hat = hatKey ? src(hatKey) : null;
-  if (hat) ctx.drawImage(hat, 10, acc === 7 && !opts.resp ? 18 : acc === 8 && !opts.resp ? 6 : -4, 44, 30);
+  ctx.translate(32, 60);
+  for (const p of idleParts({ color, acc, ghost: opts.ghost, resp: opts.resp })) {
+    const img = src(p.key);
+    if (!img) continue;
+    const x = p.x - p.w / 2;
+    const y = p.origin === 'bottom' ? p.y - p.h : p.y - p.h / 2;
+    if (opts.ghost && p.key.startsWith('ch_ghost')) ctx.globalAlpha = 0.75;
+    ctx.drawImage(img, x, y, p.w, p.h);
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 }

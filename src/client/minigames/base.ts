@@ -23,7 +23,7 @@ export abstract class MG {
   ptr = { x: 0, y: 0, down: false };
 
   constructor(protected sink: MgSink, public puzzle: any, public part: number, public theme: MapId) {
-    this.mat = MATS[theme] ?? MATS.train;
+    this.mat = MATS[theme] ?? MATS.ship;
   }
 
   /** Prepara el estado de la parte actual (también al reintentar). */

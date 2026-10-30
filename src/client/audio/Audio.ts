@@ -2,7 +2,7 @@
  * Audio sintetizado en tiempo real (WebAudio): todos los sonidos son originales,
  * generados con osciladores y ruido filtrado. Se activa tras una interacción.
  */
-type AmbKind = 'train' | 'ship' | 'plane' | 'lobby' | null;
+type AmbKind = 'market' | 'ship' | 'plane' | 'lobby' | null;
 
 class AudioEngine {
   ctx: AudioContext | null = null;
@@ -116,6 +116,10 @@ class AudioEngine {
       case 'fx_poof': case 'fx_fade': case 'fx_unfade': case 'fx_decoy': this.burst(0.35, 2400, 0.5, 0.18); this.tone(600, 0.3, 'sine', 0.1, 0, 500); break;
       case 'fx_sensor': this.tone(1400, 0.08, 'sine', 0.12); this.tone(1800, 0.08, 'sine', 0.1, 0.1); break;
       case 'fx_sparkle': this.tone(1568, 0.12, 'sine', 0.08); break;
+      case 'scan': this.tone(1760, 0.09, 'square', 0.1); this.tone(2349, 0.07, 'square', 0.06, 0.1); break;
+      case 'pick': this.burst(0.08, 1400, 1.2, 0.12); this.tone(520, 0.05, 'triangle', 0.08, 0.03); break;
+      case 'bag': this.burst(0.18, 2600, 0.6, 0.14); break;
+      case 'tick': this.tone(990, 0.03, 'sine', 0.06); break;
       case 'win': [523, 659, 784, 1046].forEach((f, i) => this.tone(f, 0.35, 'triangle', 0.2, i * 0.14)); break;
       case 'lose': [392, 349, 311, 262].forEach((f, i) => this.tone(f, 0.45, 'triangle', 0.18, i * 0.2)); break;
       case 'crash': this.burst(1.6, 200, 0.4, 0.5, 0, 'lowpass'); this.tone(120, 1.2, 'sawtooth', 0.15, 0, -80); break;
@@ -143,7 +147,7 @@ class AudioEngine {
     this.alarmNodes = { stop: () => { try { g.gain.setTargetAtTime(0, c.currentTime, 0.1); o.stop(c.currentTime + 0.5); lfo.stop(c.currentTime + 0.5); } catch { /* ya parado */ } } };
   }
 
-  /** Ambiente propio de cada vehículo: raíles y viento, agua y motor grave, turbinas y ventilación. */
+  /** Ambiente propio de cada mapa: agua y motor grave, turbinas y ventilación, hilo musical del súper. */
   ambience(kind: AmbKind) {
     if (!this.ctx) { this.pendingAmb = kind; return; }
     if (kind === this.ambKind && this.ambNodes) return;
@@ -167,21 +171,17 @@ class AudioEngine {
       o.connect(g); g.connect(out); o.start(); stops.push(() => o.stop()); return { o, g };
     };
     let timer: ReturnType<typeof setInterval> | null = null;
-    if (kind === 'train') {
-      noiseLayer(420, 'lowpass', 0.25);
-      noiseLayer(2200, 'bandpass', 0.05, 0.4);
-      drone(55, 'triangle', 0.05);
+    if (kind === 'market') {
+      // Hilo musical suave, nevera de fondo y algún carrito lejano
+      noiseLayer(300, 'lowpass', 0.06);
+      drone(60, 'sine', 0.015);
       let k = 0;
-      timer = setInterval(() => { // traqueteo de los raíles
-        const t = c.currentTime;
-        const hit = (when: number, v: number) => {
-          const s = this.noiseSrc(false); const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 160; f.Q.value = 2;
-          const g = c.createGain(); g.gain.setValueAtTime(v, t + when); g.gain.exponentialRampToValueAtTime(0.0001, t + when + 0.12);
-          s.connect(f); f.connect(g); g.connect(out); s.start(t + when, Math.random()); s.stop(t + when + 0.2);
-        };
-        hit(0, 0.5); hit(0.11, 0.35);
+      const melody = [523, 587, 659, 587, 523, 440, 494, 523];
+      timer = setInterval(() => {
+        this.tone(melody[k % melody.length], 0.35, 'triangle', 0.018, 0, 0, out as unknown as GainNode);
+        if (k % 12 === 5 && Math.random() < 0.6) { const s2 = this.noiseSrc(false); const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1800; const g = c.createGain(); g.gain.setValueAtTime(0.03, c.currentTime); g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.8); s2.connect(f); f.connect(g); g.connect(out); s2.start(); s2.stop(c.currentTime + 0.9); }
         k++;
-      }, 820);
+      }, 700);
     } else if (kind === 'ship') {
       const w = noiseLayer(500, 'lowpass', 0.3);
       drone(42, 'sawtooth', 0.025);

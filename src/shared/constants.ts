@@ -12,13 +12,14 @@ export const MIN_PLAYERS = 4;
 export const MAX_PLAYERS = 12;
 export const INTERP_DELAY_MS = 120;
 export const MAX_INPUT_BUFFER = 8;
-export const LADDER_MS = 900;
 export const VENT_ANIM_MS = 450;
 export const VENT_MOVE_MS = 550;
 export const LOCKER_ANIM_MS = 400;
 export const MEETING_CALL_MS = 3000;
 export const RESULTS_MS = 5500;
 export const EJECT_MS = 7000;
+/** Secuencia de resultados sin expulsado (empate, salto o sin votos). */
+export const EJECT_EMPTY_MS = 5000;
 export const INTRO_MS = 5000;
 export const COUNTDOWN_MS = 3000;
 export const FINAL_MS = 11000;

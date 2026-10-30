@@ -1,11 +1,15 @@
-import type { MapId } from './maps/types';
+import type { GameMode, MapId } from './maps/types';
 import type { RoleId, Team } from './roles';
 import type { RoomSettings, SettingsIssue } from './settings';
 
 /** Versión del protocolo: cliente y servidor deben coincidir. */
-export const PROTOCOL_VERSION = 7;
+export const PROTOCOL_VERSION = 8;
 
-export type Phase = 'ESPERA' | 'INICIO' | 'EXPLORACION' | 'DISCUSION' | 'VOTACION' | 'RESULTADOS' | 'EXPULSION' | 'FINAL';
+/**
+ * Fases. Viaje: INICIO → EXPLORACION ⇄ reunión. Supermercado: INICIO → COMPRA →
+ * CAJA (revelación uno a uno) → DISCUSION → VOTACION → RESULTADOS → EXPULSION → COMPRA…
+ */
+export type Phase = 'ESPERA' | 'INICIO' | 'EXPLORACION' | 'COMPRA' | 'CAJA' | 'DISCUSION' | 'VOTACION' | 'RESULTADOS' | 'EXPULSION' | 'FINAL';
 
 export interface LobbyPlayer {
   id: string;
@@ -23,6 +27,7 @@ export interface RoomState {
   practice: boolean;
   hostId: string;
   phase: Phase;
+  mode: GameMode;
   mapId: MapId;
   players: LobbyPlayer[];
   settings: RoomSettings;
@@ -38,8 +43,8 @@ export interface RoomState {
 // ------------------- Exploración -------------------
 
 export type AnimCode =
-  | 'idle' | 'walk' | 'task' | 'repair' | 'climb' | 'ventIn' | 'ventOut' | 'lockerIn' | 'lockerOut'
-  | 'attack' | 'cams' | 'search' | 'cast' | 'decoy' | 'stopped';
+  | 'idle' | 'walk' | 'task' | 'repair' | 'ventIn' | 'ventOut' | 'lockerIn' | 'lockerOut'
+  | 'attack' | 'cams' | 'search' | 'cast' | 'decoy' | 'stopped' | 'pick';
 
 export interface EntSnap {
   /** Identificador opaco por observador (no revela la identidad real). */
@@ -63,6 +68,12 @@ export interface EntSnap {
   dz?: 1;
   /** Velocidad extra visible (Explorador). */
   sp?: 1;
+  /** Lleva una bolsa de compra cerrada (sin revelar el producto). */
+  bg?: 1;
+  /** Estado de trampilla/taquilla de la entidad (para animar la tapa o puerta una sola vez). */
+  hs?: 'ventIn' | 'ventOut' | 'lockerIn' | 'lockerOut';
+  /** Estación de la trampilla/taquilla (para animar su tapa o puerta). */
+  hst?: string;
 }
 
 export interface SelfSnap {
@@ -74,11 +85,15 @@ export interface SelfSnap {
   f: 1 | -1;
   vis: number;
   speed: number;
+  /** Transición de trampilla/taquilla en curso (para animar la tapa o la puerta una sola vez). */
+  hs?: 'ventIn' | 'ventOut' | 'lockerIn' | 'lockerOut' | 'ventMove';
+  /** Estación implicada en la transición. */
+  hst?: string;
 }
 
 export type PlayerStateCode =
-  | 'free' | 'panel' | 'ladder' | 'vent' | 'locker' | 'cams' | 'sabotaging' | 'attacking' | 'ghost'
-  | 'intro' | 'meeting' | 'observing' | 'stopped';
+  | 'free' | 'panel' | 'vent' | 'locker' | 'cams' | 'sabotaging' | 'attacking' | 'ghost'
+  | 'intro' | 'meeting' | 'observing' | 'stopped' | 'queue';
 
 export interface Snapshot {
   t: number;
@@ -113,6 +128,10 @@ export interface MeetingPublic {
     tie: boolean;
     skipped: boolean;
     reveal: Team | null;
+    /** Causa explícita del resultado (la secuencia se reproduce siempre, con o sin expulsado). */
+    cause: 'ejected' | 'tie' | 'skip' | 'novotes';
+    /** Identificador único de esta resolución (evita reproducir dos veces la secuencia). */
+    rid: string;
   };
 }
 
@@ -128,7 +147,7 @@ export interface PlayerPublic {
 
 export interface EndResult {
   winner: 'workers' | 'impostor' | 'cancelled';
-  cause: 'ejected' | 'tasks' | 'critical' | 'murder' | 'abandon' | 'cancelled';
+  cause: 'ejected' | 'tasks' | 'critical' | 'murder' | 'abandon' | 'cancelled' | 'pair';
   title: string;
   text: string;
   scene: string;
@@ -136,9 +155,34 @@ export interface EndResult {
   roles: { id: string; name: string; color: number; team: Team; role: RoleId | null }[];
 }
 
+/** Aporte revelado en caja (o ausencia de aporte). */
+export interface MarketEntry {
+  round: number;
+  pid: string;
+  name: string;
+  color: number;
+  acc: number;
+  /** null = SIN APORTE. */
+  product: string | null;
+  order: number;
+}
+
+export interface MarketPublic {
+  round: number;
+  /** Quién ha entregado ya (sin revelar qué). */
+  delivered: string[];
+  /** Personas que deben aportar en esta ronda. */
+  expected: string[];
+  /** Revelación en caja: entradas ya escaneadas de esta ronda y la que pasa ahora. */
+  reveal: { entries: MarketEntry[]; current: number; startedAt: number; perMs: number; total: number } | null;
+  /** Historial público de aportes de todas las rondas. */
+  history: MarketEntry[];
+}
+
 export interface PublicGame {
   phase: Phase;
   phaseEnds: number | null;
+  mode: GameMode;
   mapId: MapId;
   gt: number;
   players: PlayerPublic[];
@@ -154,6 +198,7 @@ export interface PublicGame {
   result: EndResult | null;
   sensors: { id: string; x: number; y: number; l: string }[];
   attackInProgress: boolean;
+  market: MarketPublic | null;
 }
 
 export interface TaskPrivate {
@@ -184,6 +229,10 @@ export interface AbilityPrivate {
 
 export interface KnifePrivate {
   stage: number;
+  /** Número total de etapas de la cadena de esta partida. */
+  total: number;
+  /** Lista de etapas: hechas, la actual y las próximas bloqueadas (sin revelar su lugar). */
+  steps: { label: string; state: 'done' | 'current' | 'locked' }[];
   objective: string;
   clue: string;
   codeParts: string[];
@@ -213,8 +262,19 @@ export interface PrivateState {
   invisible: boolean;
   techBoostEndsGt: number;
   speedBoostEndsGt: number;
-  responsible: { title: string; name: string };
+  responsible: { title: string; name: string } | null;
   vision: number;
+  market: MarketPrivate | null;
+}
+
+export interface MarketPrivate {
+  /** Nombre de la comida común (null para el impostor: nunca se le envía). */
+  dish: string | null;
+  carrying: string | null;
+  delivered: boolean;
+  /** Productos que ya aportaste en esta partida (no puedes repetirlos). */
+  used: string[];
+  objective: string;
 }
 
 /** Paneles (minijuegos, cámaras, ocupación, diagnóstico) abiertos para este jugador. */
@@ -226,7 +286,9 @@ export type PanelOpen =
   | { kind: 'sabotage'; station: string; options: { id: string; name: string; group?: string }[] }
   | { kind: 'wardrobe' }
   | { kind: 'kiosk' }
-  | { kind: 'vent'; vent: string; links: { id: string; name: string; extra: boolean }[] };
+  | { kind: 'vent'; vent: string; arrows: { id: string; angle: number; extra: boolean }[]; travelling: boolean }
+  | { kind: 'shelf'; station: string; section: string; products: string[]; carrying: string | null; used: string[] }
+  | { kind: 'checkout'; station: string; carrying: string };
 
 export interface OccupancyData {
   level: string;
@@ -254,15 +316,20 @@ export type ClientAction =
   | { k: 'cam'; cam: string }
   | { k: 'occ'; level: string }
   | { k: 'analyst' }
-  | { k: 'leaveLocker' };
+  | { k: 'leaveLocker' }
+  | { k: 'pick'; st: string; product: string }
+  | { k: 'putback'; st: string }
+  | { k: 'deliver'; st: string };
 
 export type ActionMsg = ClientAction & { id: string };
 
 export interface ChatMsg {
   ch: 'lobby' | 'meeting' | 'ghost';
+  /** Vacío = mensaje del sistema (se dibuja aparte; nadie puede imitarlo). */
   from: string;
   name: string;
   color: number;
+  acc: number;
   text: string;
   t: number;
 }
@@ -278,7 +345,9 @@ export type GameEvent =
   | { e: 'stepBad'; ref: string; part: number; msg: string }
   | { e: 'occ'; data: OccupancyData }
   | { e: 'analyst'; data: AnalystData }
-  | { e: 'teleport'; x: number; y: number; l: string };
+  | { e: 'teleport'; x: number; y: number; l: string }
+  | { e: 'scan'; entry: MarketEntry }
+  | { e: 'ventView'; x: number; y: number };
 
 export interface GameStart {
   mapId: MapId;
@@ -305,11 +374,11 @@ export interface ServerToClient {
 
 export interface ClientToServer {
   hello: (d: { v: number; token?: string; name?: string }) => void;
-  create: (d: { name: string; mapId: MapId; maxPlayers: number; preset: string }) => void;
+  create: (d: { name: string; mapId: MapId; maxPlayers: number; preset: string; mode?: GameMode }) => void;
   join: (d: { code: string; name: string }) => void;
   practice: (d: { name: string; mapId: MapId; team: Team; role: RoleId | null }) => void;
   leave: () => void;
-  settings: (d: { patch: unknown; mapId?: MapId }) => void;
+  settings: (d: { patch: unknown; mapId?: MapId; mode?: GameMode }) => void;
   start: () => void;
   cancel: () => void;
   custom: (d: { color?: number; acc?: number; name?: string }) => void;

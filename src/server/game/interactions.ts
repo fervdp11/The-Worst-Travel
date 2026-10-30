@@ -1,11 +1,11 @@
-import { ATTACK_RANGE, LADDER_MS, LOCKER_ANIM_MS, USE_RANGE, VENT_ANIM_MS, VENT_MOVE_MS } from '../../shared/constants';
+import { ATTACK_RANGE, LOCKER_ANIM_MS, USE_RANGE, VENT_ANIM_MS, VENT_MOVE_MS } from '../../shared/constants';
 import { dist } from '../../shared/geometry';
 import { MINIGAMES, taskMinigame } from '../../shared/minigames';
 import type { ClientAction, PanelOpen } from '../../shared/protocol';
 import type { MapId } from '../../shared/maps/types';
 import { abilityRoleParam, analystOnTaskDone } from './abilities';
 import type { Game } from './Game';
-import { KNIFE_MINIGAMES } from './knife';
+import { KNIFE_MINIGAME } from './knife';
 import type { GPlayer, TaskInst } from './types';
 import { occupancy } from './visibility';
 
@@ -48,10 +48,9 @@ function use(g: Game, p: GPlayer, st: string): string | null {
   if (!s) return 'Estación desconocida.';
   if (busy(p)) return 'Termina antes lo que estás haciendo.';
   if (!inRange(g, p, st)) return 'Demasiado lejos.';
-  if (!p.alive && s.kind !== 'task' && s.kind !== 'ladder') return 'Los expulsados solo pueden terminar tareas.';
+  if (!p.alive && s.kind !== 'task') return 'Los expulsados solo pueden terminar tareas.';
   switch (s.kind) {
     case 'emergency': return g.callMeeting(p, st);
-    case 'ladder': return ladder(g, p, st);
     case 'vent': return enterVent(g, p, st);
     case 'locker': return enterLocker(g, p, st);
     case 'cameras': {
@@ -133,7 +132,7 @@ function tryRepair(g: Game, p: GPlayer, st: string): string | 'none' | null {
     return 'none';
   }
   const mg = MINIGAMES[stepDef.minigame];
-  const puzzle = mg.gen(g.rng, { complexity: g.gs.knifeComplexity, mapId: g.map.id });
+  const puzzle = mg.gen(g.rng, { complexity: (g.knife?.help ?? 2), mapId: g.map.id });
   let wf = 1;
   if (def.kind !== 'critical' && p.techBoostEndsGt > g.gt) wf = 1 - (abilityRoleParam(g, p, 'intensity') ?? 15) / 100;
   openMinigame(g, p, 'repair', `rep:${sab.id}:${sab.step}`, st, stepDef.minigame, 0, puzzle, stepDef.label, wf, sab.step);
@@ -146,26 +145,30 @@ function tryTask(g: Game, p: GPlayer, st: string): string | 'none' | null {
   if (t.slot.type === 'orders' && t.stage === 1 && !p.carrying) return 'Primero recoge la comanda.';
   const mgId = taskMinigame(t.slot.type, t.stage);
   const def = MINIGAMES[mgId];
-  if (!t.puzzles[t.stage]) t.puzzles[t.stage] = def.gen(g.rng, { complexity: g.gs.knifeComplexity, memory: t.memory, mapId: g.map.id });
+  if (!t.puzzles[t.stage]) t.puzzles[t.stage] = def.gen(g.rng, { complexity: (g.knife?.help ?? 2), memory: t.memory, mapId: g.map.id });
   openMinigame(g, p, t.fake ? 'fake' : 'task', t.id, st, mgId, t.part, t.puzzles[t.stage]!, t.slot.name);
   return null;
 }
 
 function knifeUse(g: Game, p: GPlayer, st: string): string | null {
-  if (!p.knife || !g.knife || p.knife.stage >= 5) return 'No hay nada útil aquí.';
+  if (!p.knife || !g.knife || p.knife.stage >= g.knife.kinds.length) return 'No hay nada útil aquí.';
   const stage = p.knife.stage;
   const opts = g.knife.options[stage];
   if (!opts.includes(st)) return 'No hay nada útil aquí.';
   const correct = g.knife.stations[stage] === st;
   if (!correct) {
     if (p.knife.searched.includes(st)) return 'Ya has registrado este lugar.';
-    const puzzle = MINIGAMES.k_search.gen(g.rng, { complexity: g.gs.knifeComplexity, mapId: g.map.id });
+    const puzzle = MINIGAMES.k_search.gen(g.rng, { complexity: (g.knife?.help ?? 2), mapId: g.map.id });
     openMinigame(g, p, 'knife', `k:${stage}:${st}`, st, 'k_search', 0, puzzle, stationLabel(g, st), 1, undefined, true);
     return null;
   }
-  const mg = KNIFE_MINIGAMES[stage];
-  const puzzle = MINIGAMES[mg].gen(g.rng, { complexity: g.gs.knifeComplexity, mapId: g.map.id });
-  if (mg === 'k_docs') Object.assign(puzzle, { codeA: g.knife.codeA });
+  const kind = g.knife.kinds[stage];
+  if (kind === 'compartment' && g.knife.kinds.includes('tool') && !p.knife.searched.includes('__tool')) {
+    // Seguridad extra: nunca se llega aquí sin la herramienta (la cadena es secuencial).
+  }
+  const mg = KNIFE_MINIGAME[kind];
+  const puzzle = MINIGAMES[mg].gen(g.rng, { complexity: (g.knife?.help ?? 2), mapId: g.map.id });
+  if (mg === 'k_docs') Object.assign(puzzle, { codeA: kind === 'docs' ? (g.knife.kinds.includes('compartment') ? g.knife.codeA : g.knife.code) : g.knife.swap ? 'B·A' : 'A·B' });
   openMinigame(g, p, 'knife', `k:${stage}:${st}`, st, mg, 0, puzzle, stationLabel(g, st));
   return null;
 }
@@ -254,12 +257,18 @@ function completeKnife(g: Game, p: GPlayer, st: string, decoy: boolean): string 
     return 'Aquí no hay nada.';
   }
   let reveal = '';
-  switch (k.stage) {
-    case 0: k.codeParts.push(g.knife!.codeA); reveal = `Documento manipulado: los primeros dígitos son ${g.knife!.codeA}.`; break;
-    case 1: reveal = `Has encontrado la ${tpl.keyName}.`; break;
-    case 2: k.codeParts.push(g.knife!.codeB); reveal = `Dentro del ${tpl.compartmentName}: últimos dígitos ${g.knife!.codeB}.`; break;
-    case 3: k.hasKnife = true; reveal = 'Tienes el cuchillo. Llévalo oculto.'; break;
-    case 4: k.authorized = true; reveal = `Autorización manipulada. ${g.map.texts.accessGoal}.`; break;
+  const kc = g.knife!;
+  switch (kc.kinds[k.stage]) {
+    case 'docs':
+      if (kc.kinds.includes('compartment')) { k.codeParts.push(kc.codeA); reveal = `${tpl.docName}: una parte de la combinación es ${kc.codeA}.`; }
+      else { k.codeParts.push(kc.code); reveal = `${tpl.docName}: la combinación completa es ${kc.code}.`; }
+      break;
+    case 'search': reveal = `Has encontrado la ${tpl.keyName}.`; break;
+    case 'tool': reveal = `Tienes la ${tpl.toolName}.`; break;
+    case 'compartment': k.codeParts.push(kc.codeB); reveal = `Dentro del ${tpl.compartmentName}: la otra parte es ${kc.codeB}.${kc.kinds.includes('ledger') ? ' Falta saber el orden.' : ` Combinación: ${kc.code}.`}`; break;
+    case 'ledger': reveal = `${tpl.ledgerName}: la combinación empieza por ${kc.swap ? kc.codeB : kc.codeA}. Combinación: ${kc.code}.`; break;
+    case 'keypad': k.hasKnife = true; reveal = 'Tienes el cuchillo. Llévalo oculto.'; break;
+    case 'auth': k.authorized = true; reveal = `${tpl.authName}: hecho. ${g.map.texts.accessGoal}.`; break;
   }
   k.stage++;
   k.searched = [];
@@ -297,29 +306,19 @@ function cancelTimed(g: Game, p: GPlayer) {
   g.dirtyPub = true;
 }
 
-// ------------------------------------------------------------------ escaleras / trampillas / taquillas
-function ladder(g: Game, p: GPlayer, st: string): string | null {
-  if (p.carrying) return 'No puedes subir cargando una bandeja.';
-  const l = g.map.ladders.find((x) => `${x.id}_a` === st || `${x.id}_b` === st);
-  if (!l) return 'Escalera desconocida.';
-  const to = `${l.id}_a` === st ? l.b : l.a;
-  p.timed = { kind: 'ladder', startGt: g.gt, endGt: g.gt + LADDER_MS, data: { to } };
-  p.state = 'ladder';
-  const from = `${l.id}_a` === st ? l.a : l.b;
-  p.x = from.x; p.y = from.y;
-  return null;
-}
-
+// ------------------------------------------------------------------ trampillas / taquillas
 function enterVent(g: Game, p: GPlayer, st: string): string | null {
   if (p.team !== 'impostor' && p.role !== 'ingeniero') return 'Solo personal autorizado puede usar las trampillas.';
   if (p.carrying) return 'No cabes con la bandeja.';
   if (g.gt < p.ventCooldownGt) return `Trampilla en enfriamiento (${Math.ceil((p.ventCooldownGt - g.gt) / 1000)} s).`;
   if (p.disguise) return 'No puedes entrar disfrazado.';
   const v = g.map.vents.find((x) => x.id === st)!;
+  // ENTRANDO: el cuerpo se coloca sobre la tapa y desciende; luego DENTRO.
   p.x = v.x; p.y = v.y;
   p.state = 'vent';
+  p.vent = { id: st, untilGt: g.gt + VENT_ANIM_MS + ventStayMs(g, p) };
   p.timed = { kind: 'ventIn', startGt: g.gt, endGt: g.gt + VENT_ANIM_MS, data: { vent: st } };
-  fxAround(g, 'vent', v.x, v.y, v.level);
+  g.dirtyPub = true;
   return null;
 }
 
@@ -332,23 +331,39 @@ function ventCooldownMs(g: Game, p: GPlayer) {
   return (abilityRoleParam(g, p, 'cooldown') ?? 30) * 1000;
 }
 
-function sendVentPanel(g: Game, p: GPlayer) {
+/**
+ * Panel de la trampilla: flechas hacia las conexiones REALES de esta trampilla,
+ * con identificadores opacos (sin nombres ni coordenadas del destino).
+ */
+function sendVentPanel(g: Game, p: GPlayer, travelling = false) {
   if (!p.vent) return;
-  p.sysPanel = { kind: 'vent', station: p.vent.id };
-  g.openPanel(p, { kind: 'vent', vent: p.vent.id, links: g.ventLinksFor(p.vent.id) });
+  const here = g.map.vents.find((x) => x.id === p.vent!.id)!;
+  const links = g.ventLinksFor(here.id);
+  const arrows = links.map((l, i) => {
+    const t = g.map.vents.find((x) => x.id === l.id)!;
+    return { id: `f${i}`, angle: Math.atan2(t.y - here.y, t.x - here.x), extra: l.extra };
+  });
+  p.sysPanel = { kind: 'vent', station: here.id, arrows: links.map((l) => l.id) };
+  g.openPanel(p, { kind: 'vent', vent: `t${here.id.length}${Math.round(here.x) % 97}`, arrows, travelling });
   p.dirtyPriv = true;
 }
 
+export function refreshVentPanel(g: Game, p: GPlayer) { sendVentPanel(g, p); }
+
 function ventAction(g: Game, p: GPlayer, a: Extract<ClientAction, { k: 'vent' }>): string | null {
+  // Una sola petición por transición: mientras ENTRA, VIAJA o SALE se ignoran las repetidas.
   if (p.state !== 'vent' || !p.vent || p.timed) return 'silencio';
   if (a.exit) {
-    p.timed = { kind: 'ventOut', startGt: g.gt, endGt: g.gt + VENT_ANIM_MS, data: {} };
-    fxAround(g, 'vent', p.x, p.y, p.level);
+    p.timed = { kind: 'ventOut', startGt: g.gt, endGt: g.gt + VENT_ANIM_MS, data: { vent: p.vent.id } };
+    g.dirtyPub = true;
     return null;
   }
-  const to = String(a.to ?? '');
-  if (!g.ventLinksFor(p.vent.id).some((l) => l.id === to)) return 'Esa trampilla no está conectada.';
+  const arrows = p.sysPanel?.kind === 'vent' ? p.sysPanel.arrows ?? [] : [];
+  const m = /^f(\d+)$/.exec(String(a.to ?? ''));
+  const to = m ? arrows[Number(m[1])] : undefined;
+  if (!to || !g.ventLinksFor(p.vent.id).some((l) => l.id === to)) return 'Esa trampilla no está conectada.';
   p.timed = { kind: 'ventMove', startGt: g.gt, endGt: g.gt + VENT_MOVE_MS, data: { to } };
+  g.openPanel(p, { kind: 'vent', vent: 'viajando', arrows: [], travelling: true });
   return null;
 }
 
@@ -356,18 +371,19 @@ function enterLocker(g: Game, p: GPlayer, st: string): string | null {
   if (p.carrying) return 'No cabes con la bandeja.';
   for (const o of g.players.values()) if (o !== p && o.locker?.id === st) return 'La taquilla está ocupada.';
   const s = g.rt.stations.get(st)!;
+  // La taquilla es sólida: entrar es una interacción autorizada, nunca atravesarla caminando.
   p.x = s.x; p.y = s.y;
   p.state = 'locker';
-  p.locker = { id: st, untilGt: g.gt + g.gs.lockerTime * 1000 };
-  p.timed = { kind: 'lockerIn', startGt: g.gt, endGt: g.gt + LOCKER_ANIM_MS, data: {} };
-  fxAround(g, 'locker', s.x, s.y, s.level);
+  p.locker = { id: st, untilGt: g.gt + LOCKER_ANIM_MS + g.gs.lockerTime * 1000 };
+  p.timed = { kind: 'lockerIn', startGt: g.gt, endGt: g.gt + LOCKER_ANIM_MS, data: { locker: st } };
+  g.dirtyPub = true;
   return null;
 }
 
 function leaveLocker(g: Game, p: GPlayer): string | null {
   if (p.state !== 'locker' || p.timed) return 'silencio';
-  p.timed = { kind: 'lockerOut', startGt: g.gt, endGt: g.gt + LOCKER_ANIM_MS, data: {} };
-  fxAround(g, 'locker', p.x, p.y, p.level);
+  p.timed = { kind: 'lockerOut', startGt: g.gt, endGt: g.gt + LOCKER_ANIM_MS, data: { locker: p.locker?.id } };
+  g.dirtyPub = true;
   return null;
 }
 
@@ -472,11 +488,11 @@ export function sabotageTick(g: Game) {
   }
   for (const p of g.players.values()) {
     if (p.state === 'vent' && p.vent && !p.timed && g.gt >= p.vent.untilGt) {
-      p.timed = { kind: 'ventOut', startGt: g.gt, endGt: g.gt + VENT_ANIM_MS, data: {} };
-      fxAround(g, 'vent', p.x, p.y, p.level);
+      p.timed = { kind: 'ventOut', startGt: g.gt, endGt: g.gt + VENT_ANIM_MS, data: { vent: p.vent.id } };
+      g.dirtyPub = true;
     }
     if (p.state === 'locker' && p.locker && !p.timed && g.gt >= p.locker.untilGt) {
-      p.timed = { kind: 'lockerOut', startGt: g.gt, endGt: g.gt + LOCKER_ANIM_MS, data: {} };
+      p.timed = { kind: 'lockerOut', startGt: g.gt, endGt: g.gt + LOCKER_ANIM_MS, data: { locker: p.locker.id } };
     }
     if (p.timed?.kind === 'attack') {
       const r = g.responsible;
@@ -510,17 +526,8 @@ export function completeTimed(g: Game, p: GPlayer) {
   const t = p.timed!;
   p.timed = null;
   switch (t.kind) {
-    case 'ladder': {
-      const to = t.data.to as { level: string; x: number; y: number };
-      p.level = to.level;
-      const f = g.rt.nearestFree(to.level, to.x, to.y, g.doorState);
-      p.x = f.x; p.y = f.y;
-      p.state = p.alive ? 'free' : 'ghost';
-      g.event(p.id, { e: 'teleport', x: p.x, y: p.y, l: p.level });
-      break;
-    }
     case 'ventIn':
-      p.vent = { id: t.data.vent, untilGt: g.gt + ventStayMs(g, p) };
+      // DENTRO: no sale solo; elige flecha o SALIR.
       sendVentPanel(g, p);
       break;
     case 'ventMove': {
@@ -528,24 +535,35 @@ export function completeTimed(g: Game, p: GPlayer) {
       p.x = v.x; p.y = v.y;
       p.vent = { id: v.id, untilGt: p.vent?.untilGt ?? g.gt };
       g.event(p.id, { e: 'teleport', x: p.x, y: p.y, l: p.level });
+      g.event(p.id, { e: 'ventView', x: v.x, y: v.y });
       sendVentPanel(g, p);
       break;
     }
-    case 'ventOut':
+    case 'ventOut': {
+      // SALIENDO → FUERA: posición libre válida junto a la tapa.
+      const f = g.rt.nearestFree(p.level, p.x, p.y + 4, g.doorState);
+      p.x = f.x; p.y = f.y;
       p.vent = null;
       p.sysPanel = null;
       p.state = 'free';
       p.ventCooldownGt = g.gt + ventCooldownMs(g, p);
       p.dirtyPriv = true;
       g.host.send(p.id, 'panel', null);
+      g.event(p.id, { e: 'teleport', x: p.x, y: p.y, l: p.level });
       break;
+    }
     case 'lockerIn':
+      p.dirtyPriv = true;
       break;
-    case 'lockerOut':
+    case 'lockerOut': {
+      const f = g.rt.nearestFree(p.level, p.x, p.y + 6, g.doorState);
+      p.x = f.x; p.y = f.y;
       p.locker = null;
       p.state = 'free';
       p.dirtyPriv = true;
+      g.event(p.id, { e: 'teleport', x: p.x, y: p.y, l: p.level });
       break;
+    }
     case 'sabotage':
       p.state = 'free';
       activateSabotage(g, t.data.id, t.data.group);
@@ -579,10 +597,12 @@ export function completeTimed(g: Game, p: GPlayer) {
 export function cancelPlayerActivity(g: Game, p: GPlayer, reason: 'meeting' | 'disconnect' | 'leave') {
   if (p.timed) {
     const t = p.timed;
-    if (t.kind === 'ladder') {
-      // A mitad de escalera: se resuelve al extremo de destino, seguro.
-      completeTimed(g, p);
-    } else if (t.kind === 'ventMove' || t.kind === 'ventIn' || t.kind === 'ventOut' || t.kind === 'lockerIn' || t.kind === 'lockerOut') {
+    if (t.kind === 'ventMove') {
+      // A mitad de traslado: se resuelve al extremo de destino, seguro.
+      const v = g.map.vents.find((x) => x.id === t.data.to);
+      if (v) { p.x = v.x; p.y = v.y; }
+      p.timed = null;
+    } else if (t.kind === 'ventIn' || t.kind === 'ventOut' || t.kind === 'lockerIn' || t.kind === 'lockerOut') {
       p.timed = null;
     } else if (t.kind === 'attack') {
       g.responsible.struggling = false;

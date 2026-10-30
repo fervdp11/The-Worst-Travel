@@ -1,9 +1,10 @@
 import { MAX_PLAYERS, MIN_PLAYERS } from './constants';
-import type { MapId } from './maps/types';
+import type { GameMode, MapDef, MapId } from './maps/types';
 import { Rng } from './rng';
 import { IMPOSTOR_ROLES, ROLES, ROLE_BY_ID, RoleId, Team, WORKER_ROLES } from './roles';
 
 export type TaskBarMode = 'always' | 'meetings' | 'never';
+export type KnifeDifficulty = 'facil' | 'normal' | 'dificil' | 'personalizada';
 
 export interface GameSettings {
   maxPlayers: number;
@@ -17,7 +18,14 @@ export interface GameSettings {
   sabotageGrace: number;
   sabotagePrep: number;
   doorDuration: number;
-  knifeComplexity: number;
+  /** Dificultad para conseguir el cuchillo (solo Viaje). */
+  knifeDifficulty: KnifeDifficulty;
+  /** Etapas de la cadena (3–7). */
+  knifeStages: number;
+  /** Ayuda de las pistas: 1 lugar exacto · 2 sala · 3 sala entre varias candidatas. */
+  knifeHelp: number;
+  /** Dispersión del recorrido: 1 cercano · 2 mixto · 3 repartido por todo el mapa. */
+  knifeSpread: number;
   attackDuration: number;
   discussionTime: number;
   votingTime: number;
@@ -25,12 +33,20 @@ export interface GameSettings {
   buttonCooldown: number;
   anonymousVotes: boolean;
   revealTeam: boolean;
+  allowSkip: boolean;
   taskBarMode: TaskBarMode;
   visualTasks: boolean;
   ventStay: number;
   ventCooldown: number;
   lockerTime: number;
   arrivalTime: number;
+  // ---- Supermercado
+  shopTime: number;
+  revealTime: number;
+  visionMarket: number;
+  /** Amplitud del catálogo de comidas: 1 todas · 2 equilibrado · 3 solo las más abiertas. */
+  dishBreadth: number;
+  avoidRecentDishes: boolean;
 }
 
 export interface RoleSettings {
@@ -43,10 +59,13 @@ export interface RoleSettings {
 export type PresetId = 'clasico' | 'equilibrado' | 'personalizado';
 
 export interface RoomSettings {
+  mode: GameMode;
   preset: PresetId;
   game: GameSettings;
   roles: Record<RoleId, RoleSettings>;
 }
+
+export type SettingsTab = 'partida' | 'mapa' | 'super';
 
 export interface NumField {
   key: keyof GameSettings;
@@ -56,40 +75,68 @@ export interface NumField {
   step: number;
   unit: string;
   help: string;
-  tab: 'partida' | 'mapa';
+  tab: SettingsTab;
+  /** Modos en los que el ajuste existe (los demás lo ocultan). */
+  modes: GameMode[];
 }
+
+const T: GameMode[] = ['travel'];
+const MK: GameMode[] = ['market'];
+const BOTH: GameMode[] = ['travel', 'market'];
 
 /** Descripción de los ajustes de partida para la interfaz (rangos validados en servidor). */
 export const GAME_FIELDS: NumField[] = [
-  { key: 'maxPlayers', label: 'Plazas máximas', min: MIN_PLAYERS, max: MAX_PLAYERS, step: 1, unit: '', help: 'Siempre hay exactamente un impostor.', tab: 'partida' },
-  { key: 'playerSpeed', label: 'Velocidad', min: 0.75, max: 1.5, step: 0.05, unit: '×', help: 'Multiplicador de velocidad de todos los empleados.', tab: 'partida' },
-  { key: 'visionWorker', label: 'Visión de trabajadores', min: 0.5, max: 2, step: 0.05, unit: '×', help: 'Radio de visión base de los trabajadores.', tab: 'partida' },
-  { key: 'visionImpostor', label: 'Visión del impostor', min: 0.5, max: 2.5, step: 0.05, unit: '×', help: 'El impostor conserva esta visión durante los apagones.', tab: 'partida' },
-  { key: 'shortTasks', label: 'Tareas cortas', min: 1, max: 6, step: 1, unit: '', help: 'Tareas cortas obligatorias por trabajador.', tab: 'partida' },
-  { key: 'longTasks', label: 'Tareas largas', min: 0, max: 3, step: 1, unit: '', help: 'Tareas largas o de varias etapas por trabajador.', tab: 'partida' },
-  { key: 'discussionTime', label: 'Tiempo de discusión', min: 0, max: 120, step: 5, unit: 's', help: 'Durante la discusión no se vota.', tab: 'partida' },
-  { key: 'votingTime', label: 'Tiempo de votación', min: 15, max: 120, step: 5, unit: 's', help: 'Se puede seguir chateando mientras se vota.', tab: 'partida' },
-  { key: 'meetingsPerPlayer', label: 'Reuniones por persona', min: 0, max: 5, step: 1, unit: '', help: 'Pulsaciones del botón de emergencia por jugador.', tab: 'partida' },
-  { key: 'buttonCooldown', label: 'Enfriamiento del botón', min: 0, max: 60, step: 5, unit: 's', help: 'Tiempo tras cada reunión antes de poder convocar otra.', tab: 'partida' },
-  { key: 'sabotageCooldown', label: 'Enfriamiento de sabotajes', min: 20, max: 120, step: 5, unit: 's', help: 'Se reinicia cuando termina el sabotaje anterior.', tab: 'mapa' },
-  { key: 'criticalTime', label: 'Plazo de críticos', min: 40, max: 120, step: 5, unit: 's', help: 'Se ajusta según las distancias de cada vehículo.', tab: 'mapa' },
-  { key: 'sabotageGrace', label: 'Protección inicial', min: 15, max: 120, step: 5, unit: 's', help: 'Tiempo inicial sin sabotajes.', tab: 'mapa' },
-  { key: 'sabotagePrep', label: 'Preparación de sabotaje', min: 1, max: 8, step: 0.5, unit: 's', help: 'Tiempo de manipulación física en la instalación.', tab: 'mapa' },
-  { key: 'doorDuration', label: 'Cierre de puertas', min: 5, max: 15, step: 1, unit: 's', help: 'Duración máxima del cierre; hay apertura de seguridad.', tab: 'mapa' },
-  { key: 'knifeComplexity', label: 'Complejidad del cuchillo', min: 1, max: 3, step: 1, unit: '', help: '1: pistas exactas · 2: pistas por sala · 3: más lugares de búsqueda.', tab: 'mapa' },
-  { key: 'attackDuration', label: 'Duración del ataque', min: 1.5, max: 5, step: 0.5, unit: 's', help: 'Interacción necesaria junto al responsable.', tab: 'mapa' },
-  { key: 'ventStay', label: 'Estancia en trampillas', min: 4, max: 30, step: 1, unit: 's', help: 'Estancia máxima del impostor (el Ingeniero tiene su propio valor).', tab: 'mapa' },
-  { key: 'ventCooldown', label: 'Enfriamiento de trampillas', min: 0, max: 60, step: 5, unit: 's', help: 'Enfriamiento del impostor tras salir.', tab: 'mapa' },
-  { key: 'lockerTime', label: 'Tiempo en taquilla', min: 6, max: 20, step: 1, unit: 's', help: 'Máximo antes de salir automáticamente.', tab: 'mapa' },
-  { key: 'arrivalTime', label: 'Maniobra de llegada', min: 10, max: 40, step: 5, unit: 's', help: 'Tiempo de llegada tras completar el trabajo, sin críticos activos.', tab: 'mapa' },
+  { key: 'maxPlayers', label: 'Plazas máximas', min: MIN_PLAYERS, max: MAX_PLAYERS, step: 1, unit: '', help: 'Siempre hay exactamente un impostor.', tab: 'partida', modes: BOTH },
+  { key: 'playerSpeed', label: 'Velocidad', min: 0.75, max: 1.5, step: 0.05, unit: '×', help: 'Multiplicador de velocidad de todos.', tab: 'partida', modes: BOTH },
+  { key: 'visionWorker', label: 'Visión de trabajadores', min: 0.5, max: 2, step: 0.05, unit: '×', help: 'Radio de visión base de los trabajadores.', tab: 'partida', modes: T },
+  { key: 'visionImpostor', label: 'Visión del impostor', min: 0.5, max: 2.5, step: 0.05, unit: '×', help: 'El impostor conserva esta visión durante los apagones.', tab: 'partida', modes: T },
+  { key: 'visionMarket', label: 'Visión en el súper', min: 0.6, max: 1.6, step: 0.05, unit: '×', help: 'Igual para todos; las estanterías altas tapan la vista.', tab: 'super', modes: MK },
+  { key: 'shortTasks', label: 'Tareas cortas por trabajador', min: 0, max: 6, step: 1, unit: '', help: 'Cada trabajador recibe esta cantidad de tareas cortas.', tab: 'partida', modes: T },
+  { key: 'longTasks', label: 'Tareas largas por trabajador', min: 0, max: 3, step: 1, unit: '', help: 'Una tarea de varias etapas cuenta como una sola.', tab: 'partida', modes: T },
+  { key: 'shopTime', label: 'Tiempo de compra y entrega', min: 30, max: 180, step: 5, unit: 's', help: 'Hay que coger un ingrediente y entregarlo en caja antes del cierre.', tab: 'super', modes: MK },
+  { key: 'revealTime', label: 'Presentación de cada aporte', min: 2, max: 5, step: 0.5, unit: 's', help: 'Duración del paso por caja de cada compra (no resta tiempo de compra).', tab: 'super', modes: MK },
+  { key: 'dishBreadth', label: 'Catálogo de comidas', min: 1, max: 3, step: 1, unit: '', help: '1: todas · 2: equilibrado · 3: solo las más abiertas a interpretación.', tab: 'super', modes: MK },
+  { key: 'discussionTime', label: 'Tiempo de discusión', min: 0, max: 120, step: 5, unit: 's', help: 'Durante la discusión no se vota.', tab: 'partida', modes: BOTH },
+  { key: 'votingTime', label: 'Tiempo de votación', min: 15, max: 120, step: 5, unit: 's', help: 'Se puede seguir chateando mientras se vota.', tab: 'partida', modes: BOTH },
+  { key: 'meetingsPerPlayer', label: 'Reuniones por persona', min: 0, max: 5, step: 1, unit: '', help: 'Pulsaciones del botón de emergencia por jugador.', tab: 'partida', modes: T },
+  { key: 'buttonCooldown', label: 'Enfriamiento del botón', min: 0, max: 60, step: 5, unit: 's', help: 'Tiempo tras cada reunión antes de poder convocar otra.', tab: 'partida', modes: T },
+  { key: 'knifeStages', label: 'Etapas del cuchillo', min: 3, max: 7, step: 1, unit: '', help: 'Solo con dificultad PERSONALIZADA.', tab: 'mapa', modes: T },
+  { key: 'knifeHelp', label: 'Ayuda de las pistas', min: 1, max: 3, step: 1, unit: '', help: '1: lugar exacto · 2: solo la sala · 3: sala entre varias candidatas.', tab: 'mapa', modes: T },
+  { key: 'knifeSpread', label: 'Dispersión del recorrido', min: 1, max: 3, step: 1, unit: '', help: '1: lugares cercanos · 3: repartidos por todo el mapa.', tab: 'mapa', modes: T },
+  { key: 'sabotageCooldown', label: 'Enfriamiento de sabotajes', min: 20, max: 120, step: 5, unit: 's', help: 'Se reinicia cuando termina el sabotaje anterior.', tab: 'mapa', modes: T },
+  { key: 'criticalTime', label: 'Plazo de críticos', min: 40, max: 120, step: 5, unit: 's', help: 'Se ajusta según las distancias de cada vehículo.', tab: 'mapa', modes: T },
+  { key: 'sabotageGrace', label: 'Protección inicial', min: 15, max: 120, step: 5, unit: 's', help: 'Tiempo inicial sin sabotajes.', tab: 'mapa', modes: T },
+  { key: 'sabotagePrep', label: 'Preparación de sabotaje', min: 1, max: 8, step: 0.5, unit: 's', help: 'Tiempo de manipulación física en la instalación.', tab: 'mapa', modes: T },
+  { key: 'doorDuration', label: 'Cierre de puertas', min: 5, max: 15, step: 1, unit: 's', help: 'Duración máxima del cierre; hay apertura de seguridad.', tab: 'mapa', modes: T },
+  { key: 'attackDuration', label: 'Duración del ataque', min: 1.5, max: 5, step: 0.5, unit: 's', help: 'Interacción necesaria junto al responsable.', tab: 'mapa', modes: T },
+  { key: 'ventStay', label: 'Estancia en trampillas', min: 4, max: 30, step: 1, unit: 's', help: 'Estancia máxima del impostor (el Ingeniero tiene su propio valor).', tab: 'mapa', modes: T },
+  { key: 'ventCooldown', label: 'Enfriamiento de trampillas', min: 0, max: 60, step: 5, unit: 's', help: 'Enfriamiento del impostor tras salir.', tab: 'mapa', modes: T },
+  { key: 'lockerTime', label: 'Tiempo en taquilla', min: 6, max: 20, step: 1, unit: 's', help: 'Máximo antes de salir automáticamente.', tab: 'mapa', modes: T },
+  { key: 'arrivalTime', label: 'Maniobra de llegada', min: 10, max: 40, step: 5, unit: 's', help: 'Tiempo de llegada tras completar el trabajo, sin críticos activos.', tab: 'mapa', modes: T },
 ];
 
+/** Presets de la dificultad del cuchillo (cambian la cadena generada, no solo el texto). */
+export const KNIFE_PRESETS: Record<Exclude<KnifeDifficulty, 'personalizada'>, { stages: number; help: number; spread: number; label: string; text: string }> = {
+  facil: { stages: 3, help: 1, spread: 1, label: 'FÁCIL', text: '3 etapas, pistas con el lugar exacto y recorridos cortos.' },
+  normal: { stages: 5, help: 2, spread: 2, label: 'NORMAL', text: '5 etapas, pistas por sala y desplazamientos variados.' },
+  dificil: { stages: 7, help: 3, spread: 3, label: 'DIFÍCIL', text: '7 etapas, más deducción y lugares repartidos por todo el mapa.' },
+};
+
+/** Parámetros efectivos de la cadena del cuchillo. */
+export function knifeParams(g: GameSettings): { stages: number; help: number; spread: number } {
+  if (g.knifeDifficulty === 'personalizada') return { stages: g.knifeStages, help: g.knifeHelp, spread: g.knifeSpread };
+  const p = KNIFE_PRESETS[g.knifeDifficulty] ?? KNIFE_PRESETS.normal;
+  return { stages: p.stages, help: p.help, spread: p.spread };
+}
+
 export const DEFAULT_GAME: GameSettings = {
-  maxPlayers: 8, playerSpeed: 1, visionWorker: 1, visionImpostor: 1.25, shortTasks: 3, longTasks: 2,
+  maxPlayers: 8, playerSpeed: 1, visionWorker: 1, visionImpostor: 1.25, shortTasks: 3, longTasks: 1,
   sabotageCooldown: 45, criticalTime: 70, sabotageGrace: 45, sabotagePrep: 3, doorDuration: 10,
-  knifeComplexity: 2, attackDuration: 2.5, discussionTime: 40, votingTime: 35, meetingsPerPlayer: 1,
-  buttonCooldown: 30, anonymousVotes: true, revealTeam: true, taskBarMode: 'meetings', visualTasks: false,
+  knifeDifficulty: 'normal', knifeStages: 5, knifeHelp: 2, knifeSpread: 2,
+  attackDuration: 2.5, discussionTime: 40, votingTime: 35, meetingsPerPlayer: 1,
+  buttonCooldown: 30, anonymousVotes: true, revealTeam: true, allowSkip: true, taskBarMode: 'meetings', visualTasks: false,
   ventStay: 10, ventCooldown: 15, lockerTime: 12, arrivalTime: 20,
+  shopTime: 90, revealTime: 3, visionMarket: 1, dishBreadth: 2, avoidRecentDishes: true,
 };
 
 function roleDefaults(chance: number, enabled: boolean, id: RoleId): RoleSettings {
@@ -106,7 +153,7 @@ export function presetSettings(preset: PresetId, base?: RoomSettings): RoomSetti
     else if (preset === 'equilibrado') roles[r.id] = roleDefaults(r.team === 'worker' ? 25 : 15, true, r.id);
     else roles[r.id] = base ? structuredClone(base.roles[r.id]) : roleDefaults(25, true, r.id);
   }
-  return { preset, game, roles };
+  return { mode: base?.mode ?? 'travel', preset, game, roles };
 }
 
 export function defaultSettings(): RoomSettings {
@@ -129,12 +176,15 @@ export function sanitizeSettings(input: unknown, prev: RoomSettings): RoomSettin
   const out = structuredClone(prev);
   const src = (input ?? {}) as Partial<RoomSettings>;
   if (src.preset === 'clasico' || src.preset === 'equilibrado' || src.preset === 'personalizado') out.preset = src.preset;
+  if (src.mode === 'travel' || src.mode === 'market') out.mode = src.mode;
   if (src.game && typeof src.game === 'object') {
     for (const f of GAME_FIELDS) {
       const v = (src.game as unknown as Record<string, unknown>)[f.key];
       if (typeof v === 'number' && Number.isFinite(v)) (out.game as unknown as Record<string, number>)[f.key] = snap(v, f.min, f.max, f.step);
     }
-    for (const k of ['anonymousVotes', 'revealTeam', 'visualTasks'] as const) {
+    const kd = (src.game as unknown as Record<string, unknown>).knifeDifficulty;
+    if (kd === 'facil' || kd === 'normal' || kd === 'dificil' || kd === 'personalizada') out.game.knifeDifficulty = kd;
+    for (const k of ['anonymousVotes', 'revealTeam', 'visualTasks', 'allowSkip', 'avoidRecentDishes'] as const) {
       const v = (src.game as unknown as Record<string, unknown>)[k];
       if (typeof v === 'boolean') out.game[k] = v;
     }
@@ -166,9 +216,20 @@ export function effectiveChance(rs: RoleSettings): number {
   return rs.enabled ? rs.chance : 0;
 }
 
-/** Comprueba la configuración para el número de humanos conectados. */
-export function validateSettings(s: RoomSettings, humans: number): SettingsIssue[] {
+/** Comprueba la configuración para el número de humanos conectados y el mapa elegido. */
+export function validateSettings(s: RoomSettings, humans: number, map?: MapDef): SettingsIssue[] {
   const issues: SettingsIssue[] = [];
+  if (humans > s.game.maxPlayers) issues.push({ field: 'game.maxPlayers', msg: `Hay ${humans} personas en la sala y el máximo es ${s.game.maxPlayers}.` });
+  if (s.mode === 'market') {
+    if (map && map.id !== 'market') issues.push({ field: 'map', msg: 'El modo Supermercado usa su propio edificio.' });
+    return issues;
+  }
+  if (map && map.id === 'market') issues.push({ field: 'map', msg: 'El modo Viaje necesita el barco o el avión.' });
+  if (map) {
+    const shorts = map.tasks.filter((t) => t.length === 'short').length, longs = map.tasks.filter((t) => t.length === 'long').length;
+    if (s.game.shortTasks > shorts) issues.push({ field: 'game.shortTasks', msg: `Este mapa tiene ${shorts} tareas cortas distintas; has pedido ${s.game.shortTasks} por trabajador.` });
+    if (s.game.longTasks > longs) issues.push({ field: 'game.longTasks', msg: `Este mapa tiene ${longs} tareas largas distintas; has pedido ${s.game.longTasks} por trabajador.` });
+  }
   const workers = Math.max(0, humans - 1);
   const workerSlots = Math.max(0, s.game.maxPlayers - 1);
   let guaranteedW = 0;
@@ -184,8 +245,7 @@ export function validateSettings(s: RoomSettings, humans: number): SettingsIssue
   }
   const guaranteedI = IMPOSTOR_ROLES.filter((id) => effectiveChance(s.roles[id]) === 100 && s.roles[id].max > 0).length;
   if (guaranteedI > 1) issues.push({ field: 'roles.impostor', msg: `Solo hay un impostor: únicamente una especialidad de impostor puede estar al 100 % (ahora hay ${guaranteedI}).` });
-  if (s.game.shortTasks + s.game.longTasks < 1) issues.push({ field: 'game.shortTasks', msg: 'Cada trabajador necesita al menos una tarea.' });
-  if (humans > s.game.maxPlayers) issues.push({ field: 'game.maxPlayers', msg: `Hay ${humans} personas en la sala y el máximo es ${s.game.maxPlayers}.` });
+  if (s.game.shortTasks + s.game.longTasks < 1) issues.push({ field: 'game.shortTasks', msg: 'Cada trabajador necesita al menos una tarea obligatoria (si no, ganaría al instante).' });
   return issues;
 }
 
@@ -246,4 +306,11 @@ export interface FrozenConfig {
   mapId: MapId;
   seed: number;
   settings: RoomSettings;
+}
+
+/** Total de tareas que se generarán con la plantilla actual. */
+export function taskTotals(g: GameSettings, players: number): { perWorker: number; workers: number; total: number } {
+  const perWorker = g.shortTasks + g.longTasks;
+  const workers = Math.max(0, players - 1);
+  return { perWorker, workers, total: perWorker * workers };
 }

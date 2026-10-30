@@ -1,11 +1,14 @@
 import type { Rect, Vec } from '../geometry';
 
-export type MapId = 'train' | 'ship' | 'plane';
+/** Mapas jugables. Viaje: barco y avión. Supermercado: edificio propio. */
+export type MapId = 'ship' | 'plane' | 'market';
+export type TravelMapId = 'ship' | 'plane';
 export type AnyMapId = MapId | 'lobby';
+export type GameMode = 'travel' | 'market';
 
 export type FloorKind =
-  | 'carpet' | 'wood' | 'metal' | 'tile' | 'lino' | 'deck' | 'roof' | 'grate'
-  | 'checker' | 'rubber' | 'concrete' | 'parquet' | 'cabin';
+  | 'carpet' | 'wood' | 'metal' | 'tile' | 'lino' | 'deck' | 'grate'
+  | 'checker' | 'rubber' | 'concrete' | 'parquet' | 'cabin' | 'terrazzo' | 'marketTile';
 export type LightKind = 'warm' | 'cold' | 'neutral' | 'exterior' | 'dim';
 
 export interface LevelDef {
@@ -16,8 +19,6 @@ export interface LevelDef {
   bounds: Rect;
   /** Contorno visual del vehículo en este nivel (casco, fuselaje, vagones). */
   outline: Vec[][];
-  /** Nivel al aire libre (techo del tren, por ejemplo). */
-  open?: boolean;
 }
 
 export interface RoomDef {
@@ -49,6 +50,8 @@ export interface WallDef {
   invisible?: boolean;
   /** Ventanas pintadas en la cara del muro (posiciones x). */
   windows?: number[];
+  /** Muro lineal diagonal (casco curvo, barandilla): segmento y semigrosor. `rect` es su caja. */
+  seg?: { ax: number; ay: number; bx: number; by: number; half: number };
 }
 
 export interface DoorDef {
@@ -78,13 +81,19 @@ export interface PropDef {
   label?: string;
   /** Se dibuja dentro del fondo estático (sin ordenación por pies). */
   flat?: boolean;
+  /** Montado en pared/barandilla (sin colisión ni sombra de suelo). */
+  mount?: 'floor' | 'wall';
+  /** Fuerza que bloquee (o no) la visión. Por defecto: objetos altos marcados. */
+  occlude?: boolean;
+  /** Tipo de sombra (por defecto según el tipo de objeto). */
+  shadow?: 'box' | 'legs' | 'pole' | 'wall' | 'low' | 'none';
   anim?: 'blink' | 'fan' | 'steam' | 'screen' | 'curtain' | 'liquid' | 'beacon' | 'flag';
 }
 
 export type StationKind =
   | 'task' | 'emergency' | 'cameras' | 'occupancy' | 'sabotage' | 'repair'
-  | 'locker' | 'vent' | 'ladder' | 'knife' | 'commsTerminal' | 'doorPanel'
-  | 'wardrobe' | 'kiosk' | 'responsible';
+  | 'locker' | 'vent' | 'knife' | 'commsTerminal' | 'doorPanel'
+  | 'wardrobe' | 'kiosk' | 'responsible' | 'shelf' | 'checkout';
 
 export interface StationDef {
   id: string;
@@ -97,14 +106,6 @@ export interface StationDef {
   range?: number;
   /** Prop asociado (para resaltar). */
   prop?: string;
-}
-
-export interface LadderDef {
-  id: string;
-  name: string;
-  kind: 'ladder' | 'stairs';
-  a: { level: string; x: number; y: number };
-  b: { level: string; x: number; y: number };
 }
 
 export interface VentDef {
@@ -128,8 +129,7 @@ export interface CameraDef {
 
 export type TaskType =
   | 'orders' | 'cooking' | 'drink' | 'dishes' | 'toilet' | 'wiring' | 'fuses' | 'pressure'
-  | 'filter' | 'assist' | 'luggage' | 'roof'
-  | 'signal' | 'brakes'
+  | 'filter' | 'assist' | 'luggage'
   | 'bilge' | 'seal' | 'ballast'
   | 'carts' | 'sorting' | 'cabinPressure';
 
@@ -187,21 +187,19 @@ export interface InterferenceZoneDef {
   stations: string[];
 }
 
-export interface KnifeStageDef {
-  /** Estaciones candidatas (se elige una por semilla). */
-  stations: string[];
-  /** Señuelos plausibles de búsqueda (complejidad media/alta). */
-  decoys?: string[];
-  label: string;
-}
+/** Tipos de etapa de la preparación del arma. */
+export type KnifeStageKind = 'docs' | 'search' | 'tool' | 'compartment' | 'ledger' | 'keypad' | 'auth';
 
 export interface KnifeTemplate {
   docName: string;
   keyName: string;
+  toolName: string;
   compartmentName: string;
+  ledgerName: string;
   containerName: string;
   authName: string;
-  stages: [KnifeStageDef, KnifeStageDef, KnifeStageDef, KnifeStageDef, KnifeStageDef];
+  /** Estaciones candidatas por tipo de etapa (la cadena elige según dificultad). */
+  pools: Record<KnifeStageKind, string[]>;
 }
 
 export interface NpcSeat {
@@ -249,7 +247,6 @@ export interface MapDef {
   doors: DoorDef[];
   props: PropDef[];
   stations: StationDef[];
-  ladders: LadderDef[];
   vents: VentDef[];
   escapistLinks: [string, string][];
   cameras: CameraDef[];
@@ -268,10 +265,32 @@ export interface MapDef {
   /** Multiplicador de plazos críticos según distancias del mapa. */
   critTimeScale: number;
   theme: MapTheme;
+  /** Datos propios del supermercado. */
+  market?: MarketMapData;
+}
+
+export interface MarketSection {
+  id: string;
+  name: string;
+  rect: Rect;
+  icon: string;
+}
+
+export interface MarketMapData {
+  checkout: string;
+  /** Puntos de la cola junto a la caja, en orden. */
+  queue: Vec[];
+  /** Punto de escaneo frente al mostrador. */
+  scanPoint: Vec;
+  /** Salida de seguridad (secuencia de expulsión). */
+  exitDoor: Vec;
+  sections: MarketSection[];
+  /** Productos expuestos en cada estantería (estación). */
+  shelves: { station: string; section: string; products: string[] }[];
 }
 
 export interface MapTheme {
-  scenery: 'land' | 'sea' | 'sky' | 'terminal';
+  scenery: 'sea' | 'sky' | 'terminal' | 'city';
   /** Colores base de la guía de arte. */
   bg: string;
   hull: string;
