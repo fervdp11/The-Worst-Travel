@@ -100,7 +100,10 @@ export function levelBase(def: MapDef, level: string, w: number, h: number, labe
       if (r.rect.w * X.s < 34 || r.rect.h * X.s < 12) continue;
       seen.add(r.name);
       const cx = X.ox + (r.rect.x + r.rect.w / 2) * X.s, cy = X.oy + (r.rect.y + r.rect.h / 2) * X.s;
-      const txt = r.name.replace('Techo · ', '');
+      let txt = r.name.replace('Techo · ', '');
+      const maxW = r.rect.w * X.s - 4;
+      while (txt.length > 4 && ctx.measureText(txt).width > maxW) txt = `${txt.slice(0, -2)}…`.replace('……', '…');
+      if (ctx.measureText(txt).width > maxW) continue;
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(10,14,28,0.9)'; ctx.strokeText(txt, cx, cy);
       ctx.fillStyle = '#eef2ff'; ctx.fillText(txt, cx, cy);
     }

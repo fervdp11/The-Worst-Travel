@@ -8,7 +8,7 @@ import { quantizeDir, stepMove } from '../../shared/movement';
 import type { AnimCode, EntSnap, GameEvent, Snapshot } from '../../shared/protocol';
 import { hashString } from '../../shared/rng';
 import { AtlasBuilder } from '../art/Atlas';
-import { CHUNK, MapPainter } from '../art/MapPainter';
+import { CHUNK, CHUNK_MARGIN, MapPainter } from '../art/MapPainter';
 import { PALETTES } from '../art/palette';
 import { drawProp, PROP_PAD } from '../art/props';
 import { generateScenery, sceneryColor, sceneryKeys } from '../art/scenery';
@@ -99,6 +99,7 @@ export class WorldScene extends Phaser.Scene {
   debug = false;
   private fxPool: Phaser.GameObjects.Image[] = [];
   private tunnelT = 0;
+  private lastFrameAt = 0;
 
   constructor() {
     super('world');
@@ -169,7 +170,7 @@ export class WorldScene extends Phaser.Scene {
         if (this.textures.exists(key)) this.textures.remove(key);
         this.textures.addCanvas(key, canvas);
         this.ownedTextures.push(key);
-        const img = this.add.image(j.chunk.x, j.chunk.y, key).setOrigin(0, 0).setScale(1 / res).setDepth(-1e5);
+        const img = this.add.image(j.chunk.x - CHUNK_MARGIN, j.chunk.y - CHUNK_MARGIN, key).setOrigin(0, 0).setScale(1 / res).setDepth(-1e5);
         this.layers.get(j.level)!.add(img);
         done++;
         onProgress(0.15 + 0.7 * (done / jobs.length), `Construyendo ${def.levels.find((l) => l.id === j.level)?.name.toLowerCase()} (${done}/${jobs.length})…`);
@@ -584,7 +585,11 @@ export class WorldScene extends Phaser.Scene {
     return this.pos.st === 'free' || this.pos.st === 'ghost';
   }
 
-  override update(_t: number, delta: number) {
+  override update() {
+    // Tiempo real medido aquí: el delta suavizado del motor no debe frenar la simulación.
+    const nowReal = performance.now();
+    const delta = Math.min(500, this.lastFrameAt ? nowReal - this.lastFrameAt : 16.7);
+    this.lastFrameAt = nowReal;
     this.frameMs = this.frameMs * 0.9 + delta * 0.1;
     this.fps = 1000 / Math.max(1, this.frameMs);
     if (!this.def || this.loading || !this.rt) return;
@@ -592,7 +597,7 @@ export class WorldScene extends Phaser.Scene {
     const net = store.net;
     if (!this.hasSelf || !this.rt.levels.has(this.pos.level)) { this.updateScenery(now, delta); return; }
     // --- paso fijo de simulación local
-    this.pos.acc += Math.min(delta, 250);
+    this.pos.acc += delta;
     const can = this.localCanMove() && this.hasSelf;
     while (this.pos.acc >= STEP_MS) {
       this.pos.acc -= STEP_MS;

@@ -9,6 +9,7 @@ import { TRAIN, xs, xe } from '../../shared/maps/train';
 import { SHIP } from '../../shared/maps/ship';
 
 export const CHUNK = 1024;
+export const CHUNK_MARGIN = 3;
 
 const SKY: Record<string, [string, string]> = {
   train: ['#bfe3ff', '#7fb9e6'],
@@ -50,10 +51,12 @@ export class MapPainter {
   }
 
   paintChunk(level: string, chunk: Rect, tallProps: PropDef[]): HTMLCanvasElement {
-    const c = makeCanvas(chunk.w * this.res, chunk.h * this.res);
+    // Margen de solape para que el filtrado no deje costuras entre bloques.
+    const M = CHUNK_MARGIN;
+    const c = makeCanvas((chunk.w + M * 2) * this.res, (chunk.h + M * 2) * this.res);
     const ctx = c.getContext('2d')!;
     ctx.scale(this.res, this.res);
-    ctx.translate(-chunk.x, -chunk.y);
+    ctx.translate(-chunk.x + M, -chunk.y + M);
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
     const near = (r: Rect, m = 80) => rectsIntersect({ x: r.x - m, y: r.y - m, w: r.w + 2 * m, h: r.h + 2 * m }, chunk);

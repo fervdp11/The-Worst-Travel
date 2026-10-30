@@ -86,7 +86,7 @@ export function openMap(app: App) {
   const def = getMap(store.gstart?.mapId ?? 'train');
   const w = app.world;
   let level = w.myPos().level;
-  const W = 1600, H = def.id === 'train' ? 520 : def.id === 'plane' ? 1000 : 820;
+  const W = 1600, H = def.id === 'train' ? 300 : def.id === 'plane' ? 1000 : 820;
   const canvas = makeCanvas(W, H);
   const ctx = canvas.getContext('2d')!;
   const tabs = h('div', { class: 'tabs' });

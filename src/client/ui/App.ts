@@ -68,7 +68,7 @@ export class App {
         backgroundColor: '#141a2e',
         scale: { mode: Phaser.Scale.NONE },
         render: { antialias: true, pixelArt: false, roundPixels: false, powerPreference: 'high-performance' },
-        fps: { target: 240, smoothStep: true },
+        fps: { smoothStep: false },
         input: { mouse: false, touch: false, keyboard: true, gamepad: false },
         audio: { noAudio: true },
         banner: false,

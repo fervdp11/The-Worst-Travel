@@ -129,7 +129,7 @@ export class Character {
     this.idleT += dtMs / 1000;
     this.anim = anim;
     this.root.setPosition(x, y);
-    this.root.setDepth(y);
+    this.root.setDepth(y + (this.seated ? 46 : 0));
     const sx = Math.abs(this.facingVis) < 0.15 ? 0.15 * Math.sign(this.facingVis || 1) : this.facingVis;
     const flip = sx < 0 ? -1 : 1;
     const w = this.walkBlend;
