@@ -12,6 +12,8 @@ import { showHostSettings, showPrefs } from './SettingsUI';
 
 /** Interfaz de la sala de espera: código, mapa, ocupación, anfitrión, chat e INICIAR. */
 export class LobbyUI {
+  /** La práctica arranca sola solo la primera vez; después se usa INICIAR. */
+  static autoStarted = new Set<string>();
   root: HTMLElement;
   private offs: (() => void)[] = [];
   private codeEl = h('span', { class: 'code' });
@@ -92,8 +94,9 @@ export class LobbyUI {
     clear(this.blockers);
     if (!isHost) this.blockers.append(h('div', null, `Esperando a que ${r.players.find((p) => p.host)?.name ?? 'el anfitrión'} inicie la partida.`));
     else for (const b of r.startBlockers) this.blockers.append(h('div', null, `• ${b}`));
-    if (r.practice && isHost && r.canStart && !this.practiceStarted) {
+    if (r.practice && isHost && r.canStart && !this.practiceStarted && !LobbyUI.autoStarted.has(r.code)) {
       this.practiceStarted = true;
+      LobbyUI.autoStarted.add(r.code);
       setTimeout(() => store.net?.emit('start'), 300);
     }
   }

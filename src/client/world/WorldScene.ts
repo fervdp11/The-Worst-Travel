@@ -286,19 +286,21 @@ export class WorldScene extends Phaser.Scene {
       this.bgLayer.add(ts);
       this.scenery.push({ ts, speed, fy, par, alpha });
     };
+    // En calidad BAJA se omite una capa de paralaje decorativa (no afecta a reglas ni visión).
+    const low = store.prefs.quality === 'bajo';
     if (id === 'train') {
       add('sc_ground', 760, 0, 1);
       add('sc_track', 760, 0, 1, 1, 200);
-      add('sc_canopy', 980, 0, 1.25);
+      if (!low) add('sc_canopy', 980, 0, 1.25);
     } else if (id === 'ship') {
       add('sc_water', 70, 0, 1);
-      add('sc_waves', 150, 0, 1, 0.9);
+      if (!low) add('sc_waves', 150, 0, 1, 0.9);
       add('sc_islands', 30, 0, 0.6, 0.85);
       add('sc_foam', 160, 0, 1, 0.8, 256);
     } else if (id === 'plane') {
       add('sc_land', 40, 0, 0.35);
       add('sc_cloudlo', 230, 0, 0.7, 0.85);
-      add('sc_cloudhi', 420, 0, 1.2, 0.75);
+      if (!low) add('sc_cloudhi', 420, 0, 1.2, 0.75);
     } else add('sc_plaza', 0, 0, 1);
     this.cameras.main.setBackgroundColor(sceneryColor(id));
   }

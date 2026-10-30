@@ -344,7 +344,7 @@ export class Room {
   onBack(pid: string) {
     // El cliente vuelve a la vista de sala; la sala se reinicia sola tras el final.
     const m = this.members.get(pid);
-    if (m && this.game?.ended && !this.resetAt) this.resetToLobby();
+    if (m && this.game?.ended) this.resetToLobby();
   }
 
   // ------------------------------------------------------------- bucle
