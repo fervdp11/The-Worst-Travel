@@ -130,7 +130,9 @@ Más detalle en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md) y [docs/GUIA_ARTE.m
 Comprobado en este entorno:
 
 - `npm run typecheck`, `npm test` (59 pruebas) y `npm run validate:maps` sin errores.
-- Compilación de producción y servidor real: menú, creación de sala, sala de espera con 4 jugadores (un navegador + 3 clientes Socket.IO automáticos), inicio, carga del mapa con barra de progreso, tarjeta de rol, exploración, mapa ampliado y una reunión completa (convocatoria, discusión, chat, voto, resultados) capturados con Playwright en los tres vehículos.
+- Compilación de producción y servidor real (`npm start`) y modo desarrollo (`npm run dev`).
+- Con Playwright sobre el servidor real: menú, creación de sala, sala de espera con 4 jugadores (un navegador + 3 clientes Socket.IO automáticos), inicio, carga del mapa con barra de progreso, tarjeta de rol, exploración en los tres vehículos, mapa ampliado, panel de cámaras con encuadre real, reunión completa (convocatoria, discusión, chat, voto con confirmación, resultados), expulsión con cinemática y paso a espectador, cinemática de desenlace, pantalla final y menú en tamaño móvil. Capturas en [docs/capturas](docs/capturas).
+- Galería de minijuegos de los tres vehículos (tareas, reparaciones y preparación del arma) renderizados en el navegador.
 
 No verificado, para ser transparentes:
 
