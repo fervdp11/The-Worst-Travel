@@ -246,8 +246,9 @@ export class Room {
   onLoaded(pid: string, mapId: MapId) {
     const m = this.members.get(pid);
     if (!m) return;
-    m.loaded = mapId;
     if (this.game && m.inGame && this.game.map.id === mapId) this.game.markReady(pid);
+    if (m.loaded === mapId) return;
+    m.loaded = mapId;
     this.broadcastRoom();
   }
 

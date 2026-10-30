@@ -74,7 +74,7 @@ export class ClientSession {
   private dispatch(ev: string, d: any) {
     if (ev === 'hello') return this.hello(d);
     if (ev === 'ping') return this.conn.send('pong', { t: Number(d.t) || 0, st: Date.now() });
-    if (!this.session) return this.err('nosession', 'Sesión no iniciada.');
+    if (!this.session) { if (ev !== 'inp' && ev !== 'loaded') this.err('nosession', 'Sesión no iniciada.'); return; }
     const room = this.room;
     const pid = this.session.pid;
     switch (ev) {
