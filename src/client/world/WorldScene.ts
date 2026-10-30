@@ -739,10 +739,18 @@ export class WorldScene extends Phaser.Scene {
       ts.tilePositionX = (v.x - pad) * s.par - t * s.speed * slow;
       ts.tilePositionY = (key === 'sc_track' || key === 'sc_foam') ? 0 : (v.y - pad) * s.par + (key === 'sc_waves' ? Math.sin(t * 0.8) * 6 : 0);
     }
-    // Túneles del tren y luz de atardecer del avión
-    if (this.mapId === 'train' && this.fog) {
-      this.tunnelT += delta * slow;
+    // Túneles del tren (oscurecen el exterior) y paso suave del día al atardecer en el avión.
+    let tint = 0xffffff;
+    if (this.mapId === 'train' && this.mode === 'game') {
+      const ph = t % 70;
+      const k = ph < 52 ? 0 : ph < 54 ? (ph - 52) / 2 : ph < 62 ? 1 : ph < 64 ? 1 - (ph - 62) / 2 : 0;
+      tint = lerpColor(0xffffff, 0x2b2733, k);
+    } else if (this.mapId === 'plane') {
+      const k = (Math.sin((t / 360) * Math.PI * 2) + 1) / 2;
+      tint = lerpColor(0xffffff, 0xffb98a, k * 0.85);
     }
+    for (const s of this.scenery) s.ts.setTint(tint);
+    void delta;
   }
 
   private updateAmbient(now: number, cam: Phaser.Cameras.Scene2D.Camera) {
@@ -938,3 +946,9 @@ export class WorldScene extends Phaser.Scene {
 }
 
 export { CHUNK };
+
+function lerpColor(a: number, b: number, k: number): number {
+  const ar = (a >> 16) & 255, ag = (a >> 8) & 255, ab = a & 255;
+  const br = (b >> 16) & 255, bg = (b >> 8) & 255, bb = b & 255;
+  return (Math.round(ar + (br - ar) * k) << 16) | (Math.round(ag + (bg - ag) * k) << 8) | Math.round(ab + (bb - ab) * k);
+}

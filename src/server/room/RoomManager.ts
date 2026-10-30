@@ -14,6 +14,7 @@ interface Session {
   pid: string;
   token: string;
   code: string | null;
+  seen: number;
 }
 
 /**
@@ -23,6 +24,20 @@ interface Session {
 export class RoomManager {
   rooms = new Map<string, Room>();
   sessions = new Map<string, Session>();
+  private sweeper: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    // Las sesiones sin sala y sin actividad se olvidan para no crecer sin límite.
+    this.sweeper = setInterval(() => this.sweep(), 60_000);
+    (this.sweeper as unknown as { unref?: () => void }).unref?.();
+  }
+
+  sweep(now = Date.now()) {
+    for (const [t, s] of this.sessions) {
+      const inRoom = s.code !== null && this.rooms.get(s.code)?.members.has(s.pid);
+      if (!inRoom && now - s.seen > 15 * 60_000) this.sessions.delete(t);
+    }
+  }
 
   private newCode(): string {
     for (;;) {
@@ -60,6 +75,7 @@ export class ClientSession {
   }
 
   handle(ev: string, d: any) {
+    if (this.session) this.session.seen = Date.now();
     try {
       this.dispatch(ev, d ?? {});
     } catch (err) {
@@ -150,7 +166,7 @@ export class ClientSession {
       else { known.code = null; this.conn.send('room', null); }
       return;
     }
-    const s: Session = { pid: randomId(10), token: randomId(24), code: null };
+    const s: Session = { pid: randomId(10), token: randomId(24), code: null, seen: Date.now() };
     this.mgr.sessions.set(s.token, s);
     this.session = s;
     this.conn.send('welcome', { pid: s.pid, token: s.token, v: PROTOCOL_VERSION, serverTime: Date.now() });

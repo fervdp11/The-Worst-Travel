@@ -224,9 +224,9 @@ export class CritTelegraph extends MG {
   override render(ctx: C) {
     ctx.beginPath(); ctx.arc(300, 280, 200, Math.PI, 0); ctx.closePath(); fillStroke(ctx, vgrad(ctx, 80, 280, '#d9a441', '#8a6a1f'), INK, 4);
     ctx.beginPath(); ctx.arc(300, 280, 170, Math.PI, 0); ctx.closePath(); fillStroke(ctx, '#f6f3ea', INK, 3);
-    NOTCHES.forEach((n, i) => { const ang = Math.PI + (i / 4) * Math.PI; text(ctx, n, 300 + Math.cos(ang) * 125, 280 + Math.sin(ang) * 125, 15, i === this.puzzle.notch ? '#c8323f' : INK); });
+    NOTCHES.forEach((n, i) => { const ang = Math.PI + 0.2 + (i / 4) * (Math.PI - 0.4); text(ctx, n, 300 + Math.cos(ang) * 118, 272 + Math.sin(ang) * 118, 15, i === this.puzzle.notch ? '#c8323f' : INK); });
     led(ctx, 300, 120, '#ff4d5e', 10);
-    const ang = Math.PI + (this.a / 4) * Math.PI;
+    const ang = Math.PI + 0.2 + (this.a / 4) * (Math.PI - 0.4);
     ctx.lineWidth = 14; ctx.strokeStyle = INK; ctx.beginPath(); ctx.moveTo(300, 280); ctx.lineTo(300 + Math.cos(ang) * 175, 280 + Math.sin(ang) * 175); ctx.stroke();
     ctx.lineWidth = 8; ctx.strokeStyle = '#495057'; ctx.stroke();
     ctx.beginPath(); ctx.arc(300 + Math.cos(ang) * 175, 280 + Math.sin(ang) * 175, 20, 0, Math.PI * 2); fillStroke(ctx, '#d64545', INK, 3);

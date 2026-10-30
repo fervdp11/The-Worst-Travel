@@ -7,7 +7,9 @@ import type { App } from './App';
 import { Chat } from './Chat';
 import { ejectionScene } from './Cinematics';
 import { clear, fmtTime, h, ICONS } from './dom';
-import { portrait } from './Portrait';
+import { drawPortrait, portrait } from './Portrait';
+import { fillStroke, makeCanvas, rr, vgrad } from '../art/draw';
+import { INK } from '../art/palette';
 
 /** Reunión: convocatoria → discusión → votación → resultados → expulsión. */
 export class MeetingUI {
@@ -24,6 +26,8 @@ export class MeetingUI {
   private tick: ReturnType<typeof setInterval>;
   private banner: HTMLElement | null = null;
   private ejectStop: (() => void) | null = null;
+  private banner2 = makeCanvas(1200, 190);
+  private bannerKey = '';
 
   constructor(private app: App) {
     this.offs.push(store.on('pub', () => this.sync()));
@@ -65,6 +69,7 @@ export class MeetingUI {
       h('div', { class: 'main' },
         h('div', { class: 'head' }, h('span', { html: ICONS.users, style: 'display:inline-flex;width:34px' }), this.title, this.timer),
         h('div', { class: 'small muted' }, `${room} · ${def.texts.vehicle}. Las posiciones de exploración se conservan.`),
+        this.banner2,
         this.grid, this.status, this.bottom),
       h('div', { class: 'panel', style: 'display:flex;flex-direction:column;min-height:0' }, this.chat.el),
     );
@@ -78,6 +83,7 @@ export class MeetingUI {
     const me = this.me();
     const alive = !!me?.alive;
     const voted = new Set(m.voted);
+    this.drawRoom();
     this.title.textContent = m.stage === 'discuss' ? 'Discusión' : m.stage === 'vote' ? 'Votación' : m.stage === 'results' ? 'Resultados' : 'Expulsión';
     clear(this.grid);
     const res = m.results;
@@ -119,6 +125,33 @@ export class MeetingUI {
     }
   }
 
+  /** Ilustración del salón con los participantes vivos alrededor de la mesa. */
+  private drawRoom() {
+    const pub = store.pub!;
+    const alive = pub.players.filter((p) => p.alive && !p.left);
+    const key = alive.map((p) => `${p.id}${p.color}${p.acc}`).join();
+    if (key === this.bannerKey) return;
+    this.bannerKey = key;
+    const map = (store.gstart?.mapId ?? 'train') as MapId;
+    const c = this.banner2;
+    c.style.cssText = 'width:100%;height:auto;max-height:150px;border-radius:12px;border:2px solid #1d1830;object-fit:cover';
+    const g = c.getContext('2d')!;
+    const W = c.width, H = c.height;
+    const wall = map === 'train' ? ['#b07a4a', '#7a4d2c'] : map === 'ship' ? ['#f1ede4', '#cfc6b4'] : ['#eef1f6', '#c3cddb'];
+    g.fillStyle = vgrad(g, 0, H, wall[0], wall[1]); g.fillRect(0, 0, W, H);
+    for (let x = 90; x < W; x += 180) { rr(g, x, 22, map === 'plane' ? 34 : 110, 60, 14); fillStroke(g, vgrad(g, 22, 82, '#cfe9ff', '#7fb1d8'), INK, 3); }
+    g.fillStyle = map === 'train' ? '#5a3a24' : map === 'ship' ? '#20375c' : '#4a5568'; g.fillRect(0, H - 30, W, 30);
+    const n = Math.max(1, alive.length);
+    const step = Math.min(110, (W - 140) / n);
+    alive.forEach((p, i) => {
+      const pc = makeCanvas(128, 128);
+      drawPortrait(pc, p.color, p.acc, { flip: i >= n / 2 });
+      g.drawImage(pc, W / 2 - (step * n) / 2 + i * step + (step - 96) / 2, 40, 96, 96);
+    });
+    rr(g, 60, H - 70, W - 120, 46, 16); fillStroke(g, vgrad(g, H - 70, H - 24, '#c98f5a', '#8a5a33'), INK, 4);
+    g.fillStyle = 'rgba(255,255,255,0.15)'; rr(g, 80, H - 64, W - 160, 10, 5); g.fill();
+  }
+
   private vote(target: string) {
     store.net?.act({ k: 'vote', target });
     audio.sfx('vote');
@@ -149,6 +182,7 @@ export class MeetingUI {
     if (this.ejectStop) { this.ejectStop(); this.ejectStop = null; }
     this.chat?.destroy(); this.chat = null;
     this.root?.remove(); this.root = null;
+    this.bannerKey = '';
     this.stage = '';
   }
 
