@@ -1,6 +1,6 @@
 import { CHAT_MAX, COLORS, COUNTDOWN_MS, MAX_PLAYERS, MIN_PLAYERS, RECONNECT_GRACE_MS, SIM_HZ, BASE_SPEED, ACCESSORIES } from '../../shared/constants';
-import { getRuntime } from '../../shared/maps';
-import type { MapId } from '../../shared/maps/types';
+import { getMap, getRuntime, isMapId, migrateMapId, modeOf } from '../../shared/maps';
+import type { GameMode, MapId } from '../../shared/maps/types';
 import { ALL_OPEN } from '../../shared/maps/runtime';
 import { stepMove } from '../../shared/movement';
 import type { ActionMsg, ChatMsg, EndResult, EntSnap, LobbyPlayer, RoomState, ServerToClient } from '../../shared/protocol';
@@ -40,6 +40,8 @@ export class Room {
   lobbyRt = getRuntime('lobby');
   resetAt: number | null = null;
   hostAwaySince: number | null = null;
+  /** Comidas jugadas recientemente en esta sala (supermercado). */
+  recentDishes: string[] = [];
 
   constructor(
     public code: string,
@@ -49,8 +51,9 @@ export class Room {
     public practiceTeam: Team = 'worker',
     public practiceRole: RoleId | null = null,
   ) {
-    this.mapId = opts.mapId;
+    this.mapId = migrateMapId(opts.mapId);
     this.settings = presetSettings(opts.preset, defaultSettings());
+    this.settings.mode = modeOf(this.mapId);
     this.settings.game.maxPlayers = practice ? 1 : Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, opts.maxPlayers));
     if (practice) this.settings.game.maxPlayers = MIN_PLAYERS;
     this.timer = setInterval(() => this.tick(), 1000 / SIM_HZ);
@@ -160,7 +163,8 @@ export class Room {
     const n = this.connectedCount();
     const min = this.practice ? 1 : MIN_PLAYERS;
     if (n < min) b.push(`Se necesitan al menos ${min} personas conectadas (hay ${n}).`);
-    if (!this.practice) for (const i of validateSettings(this.settings, n)) b.push(i.msg);
+    if (!this.practice) for (const i of validateSettings(this.settings, n, getMap(this.mapId))) b.push(i.msg);
+    if (modeOf(this.mapId) !== this.settings.mode) b.push('El mapa no corresponde al modo elegido.');
     const notLoaded = [...this.members.values()].filter((m) => m.connected && m.loaded !== this.mapId);
     if (notLoaded.length) b.push(`Cargando el mapa: ${notLoaded.map((m) => m.name).join(', ')}.`);
     if (this.game) b.push('La partida está en curso.');
@@ -171,9 +175,9 @@ export class Room {
     const players: LobbyPlayer[] = [...this.members.values()].map((m) => ({ id: m.id, name: m.name, color: m.color, acc: m.acc, connected: m.connected, host: m.id === this.hostId, loaded: m.loaded === this.mapId }));
     const blockers = this.startBlockers();
     return {
-      code: this.code, practice: this.practice, hostId: this.hostId, phase: this.game ? this.game.phase : 'ESPERA', mapId: this.mapId,
+      code: this.code, practice: this.practice, hostId: this.hostId, phase: this.game ? this.game.phase : 'ESPERA', mode: this.settings.mode, mapId: this.mapId,
       players, settings: this.settings, configVersion: this.configVersion,
-      issues: this.practice ? [] : validateSettings(this.settings, this.connectedCount()),
+      issues: this.practice ? [] : validateSettings(this.settings, this.connectedCount(), getMap(this.mapId)),
       countdownEnds: this.countdownEnds, canStart: blockers.length === 0 && !this.countdownEnds, startBlockers: blockers,
       practiceTeam: this.practice ? this.practiceTeam : undefined, practiceRole: this.practice ? this.practiceRole : undefined,
     };
@@ -185,22 +189,30 @@ export class Room {
   }
 
   sendChatSystem(text: string) {
-    this.broadcast('chat', { ch: 'lobby', from: '', name: 'Terminal', color: -1, text, t: Date.now() });
+    this.broadcast('chat', { ch: 'lobby', from: '', name: 'Terminal', color: -1, acc: 9, text, t: Date.now() });
   }
 
   // ------------------------------------------------------------- acciones de sala
-  onSettings(pid: string, patch: unknown, mapId?: MapId): string | null {
+  onSettings(pid: string, patch: unknown, mapId?: MapId, mode?: GameMode): string | null {
     if (pid !== this.hostId) return 'Solo el anfitrión puede cambiar los ajustes.';
     if (this.game) return 'No se pueden cambiar ajustes durante la partida.';
     if (this.countdownEnds) this.cancelCountdown('Ajustes modificados.');
-    if (mapId && mapId !== this.mapId) {
-      if (!['train', 'ship', 'plane'].includes(mapId)) return 'Mapa desconocido.';
-      // Cambiar de mapa descarta la preparación de la próxima partida pero conserva jugadores y ajustes.
+    if (mode !== undefined) {
+      if (mode !== 'travel' && mode !== 'market') return 'Modo desconocido.';
+      if (mode !== this.settings.mode) {
+        this.settings.mode = mode;
+        // Cambiar de modo elige un mapa válido de ese modo: no quedan sabotajes ni objetivos del anterior.
+        if (modeOf(this.mapId) !== mode) this.mapId = mode === 'market' ? 'market' : 'ship';
+      }
+    }
+    if (mapId !== undefined && mapId !== this.mapId) {
+      if (!isMapId(mapId)) return 'Mapa desconocido.';
+      if (modeOf(mapId) !== this.settings.mode) return 'Ese mapa no pertenece al modo elegido.';
       this.mapId = mapId;
     }
     if (patch) {
       const p = patch as { preset?: string; practiceTeam?: Team; practiceRole?: RoleId | null };
-      if (p.preset === 'clasico' || p.preset === 'equilibrado') this.settings = presetSettings(p.preset, this.settings);
+      if (p.preset === 'clasico' || p.preset === 'equilibrado') { const mode0 = this.settings.mode; this.settings = presetSettings(p.preset, this.settings); this.settings.mode = mode0; }
       else this.settings = sanitizeSettings(patch, this.settings);
       if (this.practice) {
         if (p.practiceTeam === 'worker' || p.practiceTeam === 'impostor') this.practiceTeam = p.practiceTeam;
@@ -260,7 +272,7 @@ export class Room {
     const clean = String(text ?? '').replace(/[\u0000-\u001f]/g, '').trim().slice(0, CHAT_MAX);
     if (!clean) return;
     m.lastChat = now;
-    const base = { from: m.id, name: m.name, color: m.color, text: clean, t: now };
+    const base = { from: m.id, name: m.name, color: m.color, acc: m.acc, text: clean, t: now };
     const g = this.game;
     if (!g || !m.inGame || g.phase === 'FINAL') {
       this.broadcast('chat', { ...base, ch: 'lobby' });
@@ -273,10 +285,10 @@ export class Room {
       for (const o of g.players.values()) if (!o.alive) this.send(o.id, 'chat', { ...base, ch: 'ghost' } as ChatMsg);
       return;
     }
-    if (g.phase === 'DISCUSION' || g.phase === 'VOTACION' || g.phase === 'RESULTADOS') {
+    if (g.phase === 'DISCUSION' || g.phase === 'VOTACION' || g.phase === 'RESULTADOS' || (g.mode === 'market' && g.phase === 'CAJA')) {
       this.broadcast('chat', { ...base, ch: 'meeting' });
     } else {
-      this.send(m.id, 'ev', { e: 'toast', text: 'Durante la exploración no hay chat entre vivos.', tone: 'warn' });
+      this.send(m.id, 'ev', { e: 'toast', text: g.mode === 'market' ? 'Durante la compra no hay chat entre vivos.' : 'Durante la exploración no hay chat entre vivos.', tone: 'warn' });
     }
   }
 
@@ -317,8 +329,10 @@ export class Room {
         mapId: this.mapId, settings: frozen, seed, configVersion: this.configVersion,
         players: players.map((m) => ({ id: m.id, name: m.name, color: m.color, acc: m.acc, connected: m.connected })),
         practice: this.practice ? { team: this.practiceTeam, role: this.practiceRole } : null,
+        recentDishes: this.recentDishes,
       },
     );
+    if (this.game.market) this.recentDishes = [...this.recentDishes, this.game.market.dish].slice(-12);
     for (const m of players) m.conn?.send('gstart', { mapId: this.mapId, seed, configVersion: this.configVersion, you: m.id, settings: frozen });
     this.broadcastRoom();
   }

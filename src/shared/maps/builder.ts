@@ -97,41 +97,27 @@ export class MapBuilder {
     this.walls.push({ level, rect, kind, occludes, face: false, invisible });
   }
 
-  /** Barandilla poligonal aproximada con pequeños rectángulos (no bloquea visión). */
+  /** Barandilla poligonal: segmentos exactos que no bloquean la visión. */
   rail(level: string, pts: Vec[], t = 14, kind: WallKind = 'rail', invisible = false) {
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1];
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      const steps = Math.max(1, Math.ceil(len / 20));
-      for (let s = 0; s < steps; s++) {
-        const t0 = s / steps, t1 = (s + 1) / steps;
-        const x0 = a.x + (b.x - a.x) * t0, y0 = a.y + (b.y - a.y) * t0;
-        const x1 = a.x + (b.x - a.x) * t1, y1 = a.y + (b.y - a.y) * t1;
-        const minx = Math.min(x0, x1) - t / 2, miny = Math.min(y0, y1) - t / 2;
-        this.walls.push({
-          level, kind, occludes: false, face: false, invisible: true,
-          rect: { x: minx, y: miny, w: Math.abs(x1 - x0) + t, h: Math.abs(y1 - y0) + t },
-        });
-      }
-    }
+    this.segs(level, pts, t, kind, false);
     // Representación visual continua de la barandilla.
     if (!invisible) this.props.push({ id: `rail${this.propSeq++}`, level, kind: 'railLine', rect: bboxOf(pts), h: 18, solid: false, flat: false, label: JSON.stringify(pts) });
   }
 
   /** Muro sólido poligonal que bloquea la visión (casco curvo, morro). */
   hullPoly(level: string, pts: Vec[], t = 18) {
+    this.segs(level, pts, t, 'hull', true);
+  }
+
+  private segs(level: string, pts: Vec[], t: number, kind: WallKind, occludes: boolean) {
+    const half = t / 2;
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i], b = pts[i + 1];
-      const len = Math.hypot(b.x - a.x, b.y - a.y);
-      const steps = Math.max(1, Math.ceil(len / 16));
-      for (let s = 0; s < steps; s++) {
-        const x0 = a.x + ((b.x - a.x) * s) / steps, y0 = a.y + ((b.y - a.y) * s) / steps;
-        const x1 = a.x + ((b.x - a.x) * (s + 1)) / steps, y1 = a.y + ((b.y - a.y) * (s + 1)) / steps;
-        this.walls.push({
-          level, kind: 'hull', occludes: true, face: false, invisible: true,
-          rect: { x: Math.min(x0, x1) - t / 2, y: Math.min(y0, y1) - t / 2, w: Math.abs(x1 - x0) + t, h: Math.abs(y1 - y0) + t },
-        });
-      }
+      this.walls.push({
+        level, kind, occludes, face: false, invisible: true,
+        rect: { x: Math.min(a.x, b.x) - half, y: Math.min(a.y, b.y) - half, w: Math.abs(b.x - a.x) + t, h: Math.abs(b.y - a.y) + t },
+        seg: { ax: a.x, ay: a.y, bx: b.x, by: b.y, half },
+      });
     }
   }
 

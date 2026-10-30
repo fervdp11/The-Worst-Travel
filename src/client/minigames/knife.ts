@@ -5,11 +5,6 @@ import { Drag, Hold, paper, screenBox } from './common';
 import { btn, C, inRect, text } from './kit';
 
 const DOC: Record<string, { title: string; lines: string[] }[]> = {
-  train: [
-    { title: 'Hoja de ruta · 07:40', lines: ['Salida andén 3 sin incidencias', 'Revisión de frenos: correcta', 'Revisor: turno de mañana', 'Llaves: custodia del jefe de tren', 'Velocidad limitada en túneles'] },
-    { title: 'Parte de mantenimiento', lines: ['Filtro del motor: limpiar', 'Válvula 2: holgura leve', 'Rack técnico: precinto nuevo', 'Fusible F4 sustituido', 'Antena: reorientar en techo'] },
-    { title: 'Libro de servicio', lines: ['Comedor: 32 cubiertos', 'Café: reponer cápsulas', 'Aseo B: papel agotado', 'Equipaje: sin etiquetar', 'Seguridad: cámaras OK'] },
-  ],
   ship: [
     { title: 'Manifiesto de pasaje', lines: ['Camarote 1: familia Ruiz', 'Camarote 3: viajero solo', 'Vehículos en bodega: 4', 'Mercancía frágil: popa', 'Tripulación de guardia: 6'] },
     { title: 'Tablón de turnos', lines: ['Puente: capitana Arrieta', 'Máquinas: dos operarios', 'Cocina: turno de tarde', 'Taller: inventario pendiente', 'Botes: revisión semanal'] },
@@ -27,7 +22,7 @@ export class KDocs extends MG {
   page = 0; found = false;
   override init() { this.page = 0; this.hint = 'Revisa las páginas y localiza la anotación manipulada.'; }
   override render(ctx: C) {
-    const pages = DOC[this.theme] ?? DOC.train;
+    const pages = DOC[this.theme] ?? DOC.ship;
     for (let i = 0; i < 3; i++) btn(ctx, 40, 70 + i * 90, 150, 70, `Pág. ${i + 1}`, i === this.page ? '#ff8a3d' : '#3d405b', i === this.page);
     paper(ctx, 220, 40, 460, 360, 0.01);
     const pg = pages[this.page];

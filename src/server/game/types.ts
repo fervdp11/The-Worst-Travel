@@ -16,7 +16,7 @@ export interface TaskInst {
 }
 
 export type TimedKind =
-  | 'ladder' | 'ventIn' | 'ventMove' | 'ventOut' | 'lockerIn' | 'lockerOut' | 'sabotage'
+  | 'ventIn' | 'ventMove' | 'ventOut' | 'lockerIn' | 'lockerOut' | 'sabotage'
   | 'attack' | 'doorOpen' | 'cast';
 
 export interface TimedAction {
@@ -65,7 +65,7 @@ export interface GPlayer {
   timed: TimedAction | null;
   panel: PanelCtx | null;
   /** Panel de sistema abierto (cámaras, ocupación, sabotaje, trampilla). */
-  sysPanel: { kind: 'cameras' | 'occupancy' | 'sabotage' | 'vent'; station: string; cam?: string; level?: string } | null;
+  sysPanel: { kind: 'cameras' | 'occupancy' | 'sabotage' | 'vent' | 'shelf' | 'checkout'; station: string; cam?: string; level?: string; arrows?: string[] } | null;
   tasks: TaskInst[];
   meetingsLeft: number;
   carrying: boolean;
@@ -93,6 +93,8 @@ export interface GPlayer {
   lastDoorRects: Set<string>;
   dirtyPriv: boolean;
   anim: AnimCode;
+  /** Gesto breve de coger o dejar un producto (supermercado). */
+  pickUntil: number;
 }
 
 export interface Decoy {

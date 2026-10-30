@@ -4,7 +4,7 @@ import type { MapId } from '../src/shared/maps/types';
 import { makeGame, startExploration, teleportTo, Harness } from './helpers';
 import { solve } from './solver';
 
-const MAPS: MapId[] = ['train', 'ship', 'plane'];
+const MAPS: MapId[] = ['ship', 'plane'];
 
 function openAndSolve(h: Harness, pid: string, station: string) {
   teleportTo(h, pid, station);
@@ -35,7 +35,7 @@ describe.each(MAPS)('partida completa en %s', (mapId) => {
     const imps = [...h.game.players.values()].filter((p) => p.team === 'impostor');
     expect(imps).toHaveLength(1);
     for (const p of h.game.players.values()) {
-      expect(p.tasks.length).toBe(5);
+      expect(p.tasks.length).toBe(h.game.gs.shortTasks + h.game.gs.longTasks);
       expect(p.tasks.every((t) => t.fake === (p.team === 'impostor'))).toBe(true);
     }
   });
@@ -117,16 +117,17 @@ describe.each(MAPS)('partida completa en %s', (mapId) => {
   });
 
   it('cadena del cuchillo protegida por prerrequisitos y ataque final', () => {
-    const h = makeGame(mapId, 4, (s) => { s.game.knifeComplexity = 1; });
+    const h = makeGame(mapId, 4, (s) => { s.game.knifeDifficulty = 'personalizada'; s.game.knifeStages = 5; s.game.knifeHelp = 1; });
     startExploration(h);
     const imp = impostor(h);
     const chain = h.game.knife!;
+    expect(chain.kinds).toHaveLength(5);
     // No se puede atacar sin arma.
     expect(h.act(imp.id, { k: 'attack' }).ok).toBe(false);
     // Saltarse etapas: la estación del contenedor no responde antes de tiempo.
     teleportTo(h, imp.id, chain.stations[3]);
     expect(h.act(imp.id, { k: 'use', st: chain.stations[3] }).ok).toBe(false);
-    for (let k = 0; k < 5; k++) openAndSolve(h, imp.id, chain.stations[k]);
+    for (let k = 0; k < chain.kinds.length; k++) openAndSolve(h, imp.id, chain.stations[k]);
     expect(imp.knife!.hasKnife).toBe(true);
     expect(imp.knife!.authorized).toBe(true);
     const r = h.game.responsible;
@@ -144,7 +145,7 @@ describe.each(MAPS)('partida completa en %s', (mapId) => {
 
 describe('reuniones y votos', () => {
   it('expulsar a un trabajador continúa; expulsar al impostor termina', () => {
-    const h = makeGame('train', 5);
+    const h = makeGame('ship', 5);
     startExploration(h);
     h.advanceMs(31000);
     const w = worker(h);
@@ -193,17 +194,17 @@ describe('reuniones y votos', () => {
   });
 
   it('una reunión saca de taquillas y trampillas a posiciones válidas', () => {
-    const h = makeGame('train', 4);
+    const h = makeGame('ship', 4);
     startExploration(h);
     h.advanceMs(31000);
     const imp = impostor(h);
-    teleportTo(h, imp.id, 'v_com');
-    expect(h.act(imp.id, { k: 'use', st: 'v_com' }).ok).toBe(true);
+    teleportTo(h, imp.id, 'v_salon');
+    expect(h.act(imp.id, { k: 'use', st: 'v_salon' }).ok).toBe(true);
     h.advanceMs(600);
     expect(imp.state).toBe('vent');
     const w = worker(h);
-    teleportTo(h, w.id, 'locker_p1');
-    expect(h.act(w.id, { k: 'use', st: 'locker_p1' }).ok).toBe(true);
+    teleportTo(h, w.id, 'locker_pers');
+    expect(h.act(w.id, { k: 'use', st: 'locker_pers' }).ok).toBe(true);
     h.advanceMs(600);
     expect(w.state).toBe('locker');
     const caller = h.game.alive().find((p) => p !== imp && p !== w)!;
@@ -212,6 +213,7 @@ describe('reuniones y votos', () => {
     expect(imp.vent).toBeNull();
     expect(w.locker).toBeNull();
     expect(h.game.rt.collides(imp.level, imp.x, imp.y, 11, h.game.doorState)).toBe(false);
+    expect(h.game.rt.collides(w.level, w.x, w.y, 11, h.game.doorState)).toBe(false);
   });
 });
 

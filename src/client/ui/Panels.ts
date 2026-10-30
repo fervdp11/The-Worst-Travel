@@ -7,7 +7,8 @@ import { audio } from '../audio/Audio';
 import { MinigameHost } from '../minigames/host';
 import { store } from '../state';
 import type { App } from './App';
-import { clear, fmtTime, h, ICONS, modal, toast } from './dom';
+import { clear, fmtTime, h, ICONS, modal, productIcon, toast } from './dom';
+import { PRODUCT_BY_ID, SECTIONS } from '../../shared/market';
 
 /** Gestiona el panel del servidor abierto para este jugador. */
 export class PanelHost {
@@ -34,7 +35,9 @@ export class PanelHost {
       case 'observer': this.cameras([p.cam], p.cam, [], p.endsGt); break;
       case 'occupancy': this.occupancy(); break;
       case 'sabotage': this.sabotage(p.station, p.options); break;
-      case 'vent': this.vent(p.links); break;
+      case 'vent': this.vent(p.arrows, p.travelling); break;
+      case 'shelf': this.shelf(p); break;
+      case 'checkout': this.checkout(p); break;
       default: break;
     }
   }
@@ -52,7 +55,7 @@ export class PanelHost {
   requestClose() {
     if (!this.cur) return;
     const kind = this.cur.kind;
-    if (kind === 'vent') return; // dentro de la trampilla se sale con el botón SALIR
+    if (kind === 'vent') return; // dentro de la trampilla se sale con el botón SALIR (sin salida accidental)
     store.net?.act({ k: 'close' });
     store.panel = null;
     this.hide();
@@ -84,7 +87,7 @@ export class PanelHost {
   }
 
   private cameras(cams: string[], current: string, noSignal: string[], endsGt?: number) {
-    const def = getMap((store.gstart?.mapId ?? 'train') as MapId);
+    const def = getMap((store.gstart?.mapId ?? 'ship') as MapId);
     let cur = current;
     const tabs = h('div', { class: 'tabs' });
     const screen = h('div', { class: 'screenbox' });
@@ -122,7 +125,7 @@ export class PanelHost {
   }
 
   private occupancy() {
-    const def = getMap((store.gstart?.mapId ?? 'train') as MapId);
+    const def = getMap((store.gstart?.mapId ?? 'ship') as MapId);
     const tabs = h('div', { class: 'tabs' });
     let level = this.app.world.myPos().level;
     const renderTabs = () => {
@@ -150,15 +153,87 @@ export class PanelHost {
     this.frame('Instalación', body);
   }
 
-  private vent(links: { id: string; name: string; extra: boolean }[]) {
-    const priv = store.priv;
-    const left = h('div', { class: 'small muted' });
-    const body = h('div', { class: 'col' },
-      h('p', { class: 'small muted', style: 'margin:0' }, 'Solo se muestran los destinos conectados. Dentro no puedes hacer tareas, sabotear ni atacar.'),
-      links.map((l) => h('button', { class: `btn${l.extra ? ' info' : ''}`, onclick: () => store.net?.act({ k: 'vent', to: l.id }), html: `${ICONS.vent}<span>${l.name}${l.extra ? ' (ruta extra)' : ''}</span>` })),
-      h('button', { class: 'btn primary', onclick: () => store.net?.act({ k: 'vent', exit: true }), html: `${ICONS.back}<span>SALIR AQUÍ</span>` }), left);
-    this.frame('Red de trampillas', body);
-    this.camTimer = setInterval(() => { left.textContent = priv ? `Tiempo restante dentro: ${fmtTime((store.priv?.ventUntilGt ?? 0) - store.gtNow())} s` : ''; }, 250);
+  /**
+   * Dentro de la trampilla: flechas grandes hacia las conexiones REALES de esta
+   * trampilla (sin nombres ni coordenadas del destino) y SALIR. Cada pulsación
+   * envía una sola petición y bloquea las demás hasta la confirmación.
+   */
+  private vent(arrows: { id: string; angle: number; extra: boolean }[], travelling: boolean) {
+    const left = h('div', { class: 'vent-time' });
+    const wrap = h('div', { class: 'vent-ui' });
+    let busy = travelling;
+    const buttons: HTMLButtonElement[] = [];
+    const lock = () => { busy = true; for (const b of buttons) b.disabled = true; };
+    for (const a of arrows) {
+      const deg = (a.angle * 180) / Math.PI;
+      // Flechas en un anillo: separadas aunque dos conexiones tengan direcciones parecidas.
+      const b = h('button', {
+        class: `vent-arrow${a.extra ? ' extra' : ''}`, 'aria-label': a.extra ? 'Conexión temporal' : 'Conexión de la red',
+        style: `--a:${deg}deg`, disabled: busy,
+        onclick: (e: Event) => { e.stopPropagation(); if (busy) return; lock(); audio.sfx('fx_vent'); store.net?.act({ k: 'vent', to: a.id }); },
+        html: `<span style="transform:rotate(${deg}deg)">${ICONS.arrow}</span>`,
+      }) as HTMLButtonElement;
+      buttons.push(b);
+    }
+    this.spreadArrows(buttons, arrows.map((a) => a.angle));
+    const exit = h('button', {
+      class: 'btn primary big vent-exit', disabled: busy,
+      onclick: (e: Event) => { e.stopPropagation(); if (busy) return; lock(); store.net?.act({ k: 'vent', exit: true }); },
+      html: `${ICONS.back}<span>SALIR</span>`,
+    }) as HTMLButtonElement;
+    buttons.push(exit);
+    wrap.append(...buttons, h('div', { class: 'vent-hint' }, travelling ? 'Recorriendo el conducto…' : 'Dentro de la trampilla: elige una flecha o sal. Solo ves el entorno inmediato.'), left);
+    document.getElementById('ui')!.append(wrap);
+    this.el = wrap;
+    this.camTimer = setInterval(() => {
+      const ms = (store.priv?.ventUntilGt ?? 0) - store.gtNow();
+      left.textContent = `Tiempo máximo dentro: ${fmtTime(ms)} s`;
+    }, 250);
+  }
+
+  /** Coloca las flechas en un anillo sin que se solapen (mínimo 34° entre ellas). */
+  private spreadArrows(btns: HTMLButtonElement[], angles: number[]) {
+    const order = angles.map((a, i) => ({ a, i })).sort((p, q) => p.a - q.a);
+    const min = (34 * Math.PI) / 180;
+    for (let k = 1; k < order.length; k++) if (order[k].a - order[k - 1].a < min) order[k].a = order[k - 1].a + min;
+    for (const o of order) btns[o.i].style.setProperty('--pa', `${(o.a * 180) / Math.PI}deg`);
+  }
+
+  /** Estantería: productos de su cara accesible, con icono y nombre. */
+  private shelf(p: Extract<PanelOpen, { kind: 'shelf' }>) {
+    const body = h('div', { class: 'col' });
+    const sec = SECTIONS.find((x) => x.id === p.section)?.name ?? '';
+    if (p.carrying) {
+      const pr = PRODUCT_BY_ID[p.carrying];
+      const here = p.products.includes(p.carrying);
+      body.append(h('div', { class: 'row carry-row' }, productIcon(p.carrying, 44), h('div', { class: 'grow' }, h('div', { class: 'small muted' }, 'Llevas'), h('b', null, pr?.name ?? '')),
+        here ? h('button', { class: 'btn', onclick: () => { audio.sfx('pick'); store.net?.act({ k: 'putback', st: p.station }); }, html: `${ICONS.back}<span>DEVOLVER AQUÍ</span>` }) : h('span', { class: 'small muted' }, 'Este producto se devuelve en su sección.')));
+      body.append(h('p', { class: 'small muted', style: 'margin:0' }, 'Solo puedes llevar un ingrediente: devuelve el que llevas para coger otro.'));
+    }
+    const grid = h('div', { class: 'product-grid' });
+    for (const id of p.products) {
+      const pr = PRODUCT_BY_ID[id];
+      if (!pr) continue;
+      const used = p.used.includes(id);
+      grid.append(h('button', {
+        class: 'product', disabled: !!p.carrying || used, title: used ? 'Ya lo aportaste en una ronda anterior' : pr.name,
+        onclick: () => { audio.sfx('pick'); store.net?.act({ k: 'pick', st: p.station, product: id }); },
+      }, productIcon(id, 48), h('span', null, pr.name), used ? h('span', { class: 'tag' }, 'ya aportado') : null));
+    }
+    body.append(grid);
+    this.frame(`Estantería · ${sec}`, body);
+  }
+
+  /** Caja: confirmación explícita (la elección queda bloqueada para la ronda). */
+  private checkout(p: Extract<PanelOpen, { kind: 'checkout' }>) {
+    const pr = PRODUCT_BY_ID[p.carrying];
+    const body = h('div', { class: 'col center' },
+      productIcon(p.carrying, 72),
+      h('h3', null, pr?.name ?? ''),
+      h('p', { class: 'small muted', style: 'margin:0;text-align:center' }, 'Se mete en una bolsa sellada. Nadie lo verá hasta el cierre de compras, cuando pase por caja. Después no podrás cambiarlo en esta ronda.'),
+      h('button', { class: 'btn primary big', onclick: () => { audio.sfx('bag'); store.net?.act({ k: 'deliver', st: p.station }); }, html: `${ICONS.bag}<span>ENTREGAR</span>` }),
+    );
+    this.frame('Entrega en caja', body);
   }
 
   private renderAnalyst(d: AnalystData) {
@@ -190,7 +265,7 @@ export function abilityDialog(app: App, role: RoleId) {
   const priv = store.priv!;
   const ab = priv.ability!;
   if (store.gtNow() < ab.cooldownEndsGt) { toast(`Habilidad en enfriamiento (${Math.ceil((ab.cooldownEndsGt - store.gtNow()) / 1000)} s).`, 'warn'); return; }
-  const def = getMap((store.gstart?.mapId ?? 'train') as MapId);
+  const def = getMap((store.gstart?.mapId ?? 'ship') as MapId);
   const list = h('div', { class: 'col' });
   let m: { close: () => void };
   if (role === 'rastreador') {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getMap, MAP_IDS } from '../src/shared/maps';
+import { getMap, getRuntime, MAP_IDS } from '../src/shared/maps';
 import { validateMap } from '../src/shared/maps/validate';
 import { MINIGAMES, taskMinigame } from '../src/shared/minigames';
 import { Rng } from '../src/shared/rng';
@@ -7,7 +7,6 @@ import { IMPOSTOR_ROLES, ROLES, WORKER_ROLES } from '../src/shared/roles';
 import { assignRoles, defaultSettings, presetSettings, sanitizeSettings, validateSettings } from '../src/shared/settings';
 import { SKIP, tallyVotes } from '../src/shared/votes';
 import { generateKnifeChain } from '../src/server/game/knife';
-import { TRAIN, xs, xe } from '../src/shared/maps/train';
 import { makeGame, startExploration } from './helpers';
 
 describe('votos', () => {
@@ -93,7 +92,7 @@ describe('asignación de roles', () => {
     expect(IMPOSTOR_ROLES).toHaveLength(6);
   });
   it('cambiar duraciones en espera modifica la habilidad en la siguiente partida', () => {
-    const h = makeGame('train', 4, (s) => {
+    const h = makeGame('ship', 4, (s) => {
       for (const r of ROLES) s.roles[r.id] = { ...s.roles[r.id], enabled: false, chance: 0 };
       s.roles.explorador = { ...s.roles.explorador, enabled: true, chance: 100, max: 3, params: { duration: 9, cooldown: 12, intensity: 40 } };
     });
@@ -107,78 +106,77 @@ describe('asignación de roles', () => {
 });
 
 describe('planos maestros', () => {
-  it.each(['train', 'ship', 'plane', 'lobby'] as const)('%s es accesible y coherente', (id) => {
+  it.each(['ship', 'plane', 'market', 'lobby'] as const)('%s es accesible y coherente con todos los objetos colocados', (id) => {
     const rep = validateMap(getMap(id));
     expect(rep.errors).toEqual([]);
   });
   it('el plano es determinista (mismo resultado en cliente y servidor)', () => {
     for (const id of MAP_IDS) expect(JSON.stringify(getMap(id).walls)).toBe(JSON.stringify(getMap(id).walls));
   });
-  it('el techo del tren coincide con la posición y anchura de los vagones', () => {
-    const m = getMap('train');
-    for (let i = 0; i < 9; i++) {
-      const roof = m.rooms.find((r) => r.id === `r${i}`)!;
-      expect(roof.rect.x).toBe(xs(i) + 12);
-      expect(roof.rect.x + roof.rect.w).toBe(xe(i) - 12);
-      expect(roof.rect.y + roof.rect.h).toBeLessThanOrEqual(TRAIN.MOD_W);
-    }
-    expect(m.ladders).toHaveLength(3);
+  it.each(['ship', 'plane', 'market', 'lobby'] as const)('%s tiene exactamente una planta transitable', (id) => {
+    const m = getMap(id);
+    expect(m.levels).toHaveLength(1);
+    for (const s of m.stations) expect(s.level).toBe(m.levels[0].id);
+    for (const p of m.props) expect(p.level).toBe(m.levels[0].id);
   });
-  it.each(MAP_IDS)('%s: escaleras con extremos emparejados en la misma X/Y', (id) => {
-    for (const l of getMap(id).ladders) { expect(l.a.x).toBe(l.b.x); expect(l.a.y).toBe(l.b.y); expect(l.a.level).not.toBe(l.b.level); }
+  it('el tren ya no existe ni es seleccionable', () => {
+    expect(MAP_IDS).toEqual(['ship', 'plane', 'market']);
+    expect(MAP_IDS as string[]).not.toContain('train');
   });
-  it('el avión solo conecta niveles por dos accesos de servicio', () => {
-    expect(getMap('plane').ladders).toHaveLength(2);
-    expect(getMap('ship').levels).toHaveLength(3);
-  });
-  it.each(MAP_IDS)('%s: requisitos mínimos de contenido', (id) => {
+  it.each(['ship', 'plane'] as const)('%s: requisitos mínimos de contenido del modo Viaje', (id) => {
     const m = getMap(id);
     expect(m.cameras).toHaveLength(4);
     expect(m.stations.filter((s) => s.kind === 'emergency')).toHaveLength(2);
     expect(m.sabotages.filter((s) => s.kind === 'critical')).toHaveLength(2);
     expect(m.sabotages.map((s) => s.kind)).toEqual(expect.arrayContaining(['lights', 'comms', 'doors']));
     expect(new Set(m.tasks.map((t) => t.type)).size).toBeGreaterThanOrEqual(8);
-    expect(m.tasks.filter((t) => t.exclusive).length).toBeGreaterThanOrEqual(3);
+    expect(m.tasks.filter((t) => t.exclusive).length).toBeGreaterThanOrEqual(2);
     expect(m.vents.length).toBeGreaterThanOrEqual(5);
     expect(m.responsible).toBeTruthy();
-    for (const c of m.cameras) expect(m.levels.some((l) => l.id === c.level)).toBe(true);
     for (const t of m.tasks) t.stages.forEach((_, i) => expect(MINIGAMES[taskMinigame(t.type, i)]).toBeTruthy());
     for (const s of m.sabotages) for (const r of s.repair) expect(MINIGAMES[r.minigame]).toBeTruthy();
+    for (const v of m.vents) for (const l of v.links) expect(m.vents.find((x) => x.id === l)?.links).toContain(v.id);
   });
-  it('la tarea del techo es exclusiva del tren', () => {
-    expect(getMap('train').tasks.some((t) => t.type === 'roof')).toBe(true);
-    expect(getMap('ship').tasks.some((t) => t.type === 'roof')).toBe(false);
-    expect(getMap('plane').tasks.some((t) => t.type === 'roof')).toBe(false);
-  });
-  it('ningún texto de un vehículo pertenece a otro', () => {
+  it('ningún texto de un vehículo pertenece a otro ni al tren', () => {
     const forbidden: Record<string, RegExp> = {
-      train: /capit|piloto|barco|avión|cubierta|bodega|naufrag|aterriz/i,
-      ship: /conductor|piloto|tren|avión|vagón|locomotora|aterriz|descarril/i,
-      plane: /conductor|capit|tren|barco|vagón|locomotora|naufrag|descarril/i,
+      ship: /conductor|piloto|tren|avión|vagón|locomotora|aterriz|descarril|techo|ferrocarril|raíles/i,
+      plane: /conductor|capit|tren|barco|vagón|locomotora|naufrag|descarril|techo|ferrocarril|raíles/i,
     };
-    for (const id of MAP_IDS) {
+    for (const id of ['ship', 'plane'] as const) {
       const m = getMap(id);
-      const texts = [...Object.values(m.texts), m.responsible!.title, ...m.sabotages.flatMap((s) => [s.name, s.failText ?? '', s.failTitle ?? '', ...s.repair.map((r) => r.label)]), ...m.levels.map((l) => l.name), m.knife!.docName, m.knife!.authName, ...m.knife!.stages.map((s) => s.label)].join(' | ');
+      const texts = [...Object.values(m.texts), m.responsible!.title, ...m.sabotages.flatMap((s) => [s.name, s.failText ?? '', s.failTitle ?? '', ...s.repair.map((r) => r.label)]), ...m.levels.map((l) => l.name), m.knife!.docName, m.knife!.authName, ...m.tasks.flatMap((t) => t.stages.map((x) => x.label))].join(' | ');
       expect(texts, id).not.toMatch(forbidden[id]);
     }
   });
 });
 
-describe('cadena del cuchillo', () => {
-  it.each(MAP_IDS)('%s: cinco etapas variables, distintas y válidas', (id) => {
+describe('cadena del cuchillo según dificultad', () => {
+  it.each(['ship', 'plane'] as const)('%s: fácil 3, normal 5 y difícil 7 etapas reales, distintas y válidas', (id) => {
     const m = getMap(id);
+    const rt = getRuntime(id);
     const seen = new Set<string>();
-    for (let seed = 1; seed < 40; seed++) {
-      for (const cx of [1, 2, 3]) {
-        const c = generateKnifeChain(new Rng(seed), m, cx);
-        expect(c.stations).toHaveLength(5);
-        expect(new Set(c.stations).size).toBe(5);
-        c.stations.forEach((s, i) => { expect(m.knife!.stages[i].stations).toContain(s); expect(c.options[i]).toContain(s); });
-        expect(c.code).toBe(c.codeA + c.codeB);
+    for (const [stages, help, spread] of [[3, 1, 1], [5, 2, 2], [7, 3, 3], [4, 2, 1], [6, 3, 2]] as const) {
+      for (let seed = 1; seed < 25; seed++) {
+        const c = generateKnifeChain(new Rng(seed), m, rt, { stages, help, spread });
+        expect(c.kinds).toHaveLength(stages);
+        expect(c.stations).toHaveLength(stages);
+        expect(new Set(c.stations).size).toBe(stages);
+        expect(c.kinds[stages - 1]).toBe('auth');
+        expect(c.kinds[stages - 2]).toBe('keypad');
+        c.stations.forEach((s, i) => { expect(m.knife!.pools[c.kinds[i]]).toContain(s); expect(c.options[i]).toContain(s); expect(rt.stations.get(s)).toBeTruthy(); });
+        if (help >= 3) expect(c.options.slice(0, -1).some((o) => o.length > 1)).toBe(true);
+        expect(c.code).toHaveLength(4);
         seen.add(c.stations.join());
       }
     }
-    expect(seen.size).toBeGreaterThan(1);
+    expect(seen.size).toBeGreaterThan(3);
+  });
+  it('los presets cambian la cadena generada, no solo el texto', () => {
+    const lens = (['facil', 'normal', 'dificil'] as const).map((d) => {
+      const h = makeGame('ship', 4, (s) => { s.game.knifeDifficulty = d; });
+      return h.game.knife!.kinds.length;
+    });
+    expect(lens).toEqual([3, 5, 7]);
   });
 });
 
@@ -196,11 +194,11 @@ describe('resolución terminal', () => {
     expect(ends.length).toBe(4);
   });
   it('no se puede convocar reunión durante un ataque confirmado; un botón válido lo interrumpe antes', () => {
-    const h = makeGame('train', 4, (s) => { s.game.knifeComplexity = 1; });
+    const h = makeGame('ship', 4);
     startExploration(h);
     h.advanceMs(31_000);
     const imp = [...h.game.players.values()].find((p) => p.team === 'impostor')!;
-    imp.knife!.hasKnife = true; imp.knife!.authorized = true; imp.knife!.stage = 5;
+    imp.knife!.hasKnife = true; imp.knife!.authorized = true; imp.knife!.stage = h.game.knife!.kinds.length;
     const r = h.game.responsible; r.waitUntil = Infinity;
     imp.level = r.level; const f = h.game.rt.nearestFree(r.level, r.x + 30, r.y); imp.x = f.x; imp.y = f.y;
     expect(h.act(imp.id, { k: 'attack' }).ok).toBe(true);

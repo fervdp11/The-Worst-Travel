@@ -5,7 +5,7 @@ import { MG } from './base';
 import { Drag, paper, screenBox, Scrub, sponge } from './common';
 import { btn, C, dial, food, FOOD_NAMES, inRect, lever, plate, screwHead, suitcaseIcon, symbol, text, wheel } from './kit';
 
-const T = (theme: string, train: string, ship: string, plane: string) => (theme === 'ship' ? ship : theme === 'plane' ? plane : train);
+const T = (theme: string, ship: string, plane: string) => (theme === 'plane' ? plane : ship);
 
 // ------------------------------------------------------------ Pedidos (recoger)
 export class OrdersPick extends MG {
@@ -15,7 +15,7 @@ export class OrdersPick extends MG {
   override render(ctx: C) {
     paper(ctx, 40, 70, 210, 260, -0.03);
     text(ctx, 'COMANDA', 145, 100, 22, INK);
-    text(ctx, `${T(this.theme, 'Mesa', 'Mesa', 'Fila')} ${this.puzzle.table ?? ''}`, 145, 128, 18, '#c8323f');
+    text(ctx, `${T(this.theme, 'Mesa', 'Fila')} ${this.puzzle.table ?? ''}`, 145, 128, 18, '#c8323f');
     (this.puzzle.want as string[]).forEach((f, i) => { food(ctx, f, 95, 175 + i * 50, 36); text(ctx, FOOD_NAMES[f], 170, 175 + i * 50, 18, INK); });
     for (const s of this.slots()) {
       const on = this.sel.includes(s.f);
@@ -366,7 +366,7 @@ export class Filter extends MG {
 // ------------------------------------------------------------ Asistencia al responsable (secuencia)
 export class Assist extends MG {
   showI = 0; showT = 0; input: number[] = []; playing = true; lit = -1; litT = 0;
-  override init() { this.showI = 0; this.showT = -0.6; this.input = []; this.playing = true; this.hint = `Memoriza la secuencia del ${T(this.theme, 'panel de instrumentos', 'radar', 'panel superior')} y repítela.`; }
+  override init() { this.showI = 0; this.showT = -0.6; this.input = []; this.playing = true; this.hint = `Memoriza la secuencia del ${T(this.theme, 'radar', 'panel superior')} y repítela.`; }
   private B(i: number) { return { x: 130 + (i % 3) * 160, y: 150 + Math.floor(i / 3) * 120 }; }
   override render(ctx: C, dt: number) {
     screenBox(ctx, 220, 50, 280, 60, this.mat.screen);
@@ -411,7 +411,7 @@ export class Luggage extends MG {
   private slots() { let x = 40; return (this.puzzle.slots as string[]).map((s) => { const r = { x, w: SIZE_W[s] + 10, size: s }; x += r.w + 14; return r; }); }
   override render(ctx: C) {
     rr(ctx, 30, 70, 660, 130, 10); fillStroke(ctx, vgrad(ctx, 70, 200, '#6c757d', '#495057'), INK, 3);
-    text(ctx, T(this.theme, 'PORTAEQUIPAJES', 'ESTIBA', 'COMPARTIMENTO SUPERIOR'), 360, 56, 18, '#fff', true);
+    text(ctx, T(this.theme, 'ESTIBA', 'COMPARTIMENTO SUPERIOR'), 360, 56, 18, '#fff', true);
     this.slots().forEach((s, k) => { rr(ctx, s.x, 90, s.w, 100, 8); fillStroke(ctx, this.slotOf.includes(k) ? 'rgba(61,220,151,0.3)' : 'rgba(0,0,0,0.3)', '#ffd23f', 2); text(ctx, s.size, s.x + s.w / 2, 140, 26, 'rgba(255,255,255,0.35)'); });
     ctx.fillStyle = 'rgba(255,210,63,0.15)'; ctx.fillRect(30, 215, 660, 80);
     text(ctx, 'PASILLO · MANTENER LIBRE', 360, 255, 16, 'rgba(255,255,255,0.6)');
@@ -429,105 +429,5 @@ export class Luggage extends MG {
     }
     if (this.slotOf.every((s) => s !== null)) this.submit({ map: this.slotOf });
   }
-}
-
-// ------------------------------------------------------------ Techo: antena y anclajes
-export class Roof extends MG {
-  angle = 0.5; drag = false; stable = 0; anchors = [false, false, false];
-  override init() { this.angle = this.puzzle.target > 0.5 ? 0.1 : 0.9; this.stable = 0; this.anchors = [false, false, false]; this.hint = this.part === 0 ? 'Orienta la antena hasta la señal máxima y mantenla.' : 'Fija los tres puntos de anclaje.'; }
-  override render(ctx: C, dt: number) {
-    const g = ctx.createLinearGradient(0, 30, 0, 300); g.addColorStop(0, '#8ecae6'); g.addColorStop(1, '#bde0fe');
-    rr(ctx, 30, 30, 660, 300, 14); ctx.fillStyle = g; ctx.fill();
-    ctx.fillStyle = '#9aa5b1'; ctx.fillRect(30, 300, 660, 100);
-    const sig = Math.max(0, 1 - Math.abs(this.angle - this.puzzle.target) * 5);
-    ctx.save(); ctx.translate(300, 260); ctx.rotate((this.angle - 0.5) * 2.2);
-    ctx.fillStyle = INK; ctx.fillRect(-6, -120, 12, 120);
-    ctx.beginPath(); ctx.ellipse(0, -130, 60, 30, 0, 0, Math.PI * 2); fillStroke(ctx, '#e9eef5', INK, 4);
-    ctx.restore();
-    screenBox(ctx, 470, 60, 180, 120, '#1d2b22');
-    for (let i = 0; i < 8; i++) { rr(ctx, 490 + i * 20, 160 - i * 11, 14, i * 11 + 6, 3); ctx.fillStyle = i / 8 < sig ? '#3ddc97' : '#2b3a35'; ctx.fill(); }
-    text(ctx, `SEÑAL ${Math.round(sig * 100)} %`, 560, 75, 16, '#3ddc97');
-    if (this.part === 0) {
-      if (Math.abs(this.angle - this.puzzle.target) <= this.puzzle.tol * 0.9 && !this.drag) { this.stable += dt; if (this.stable > 0.5) this.submit({ angle: this.angle }); } else this.stable = 0;
-      text(ctx, '⟵ arrastra para girar ⟶', 300, 360, 18, '#fff', true);
-    } else {
-      [[180, 350], [300, 370], [420, 350]].forEach(([x, y], i) => screwHead(ctx, x, y, 22, this.anchors[i] ? 0.8 : 0));
-    }
-  }
-  override down(x: number, y: number) {
-    if (this.part === 0) { this.drag = true; return; }
-    [[180, 350], [300, 370], [420, 350]].forEach(([sx, sy], i) => { if (Math.hypot(x - sx, y - sy) < 34 && !this.anchors[i]) { this.anchors[i] = true; this.sink.sfx('click'); } });
-    if (this.anchors.every(Boolean)) this.submit({ anchors: 3 });
-  }
-  override move() {}
-  override up() { this.drag = false; }
-  override dragBy(dx: number) { if (this.part === 0 && this.drag) this.angle = Math.max(0, Math.min(1, this.angle + dx / 700)); }
-}
-
-// ------------------------------------------------------------ Señalización de vía (tren)
-export class Signal extends MG {
-  lv = [false, false, false]; aspect = 'rojo';
-  override init() { this.lv = [false, false, false]; this.aspect = 'rojo'; this.hint = `Fija la ruta hacia la vía ${this.puzzle.route}: ajusta las agujas como indica el esquema y abre la señal.`; }
-  override render(ctx: C) {
-    screenBox(ctx, 60, 60, 420, 200, '#0f1c14');
-    ctx.lineCap = 'round';
-    const need = this.puzzle.levers as boolean[];
-    ctx.strokeStyle = '#495057'; ctx.lineWidth = 8;
-    ctx.beginPath(); ctx.moveTo(80, 160); ctx.lineTo(460, 160); ctx.stroke();
-    for (let i = 0; i < 3; i++) { const x = 150 + i * 110; ctx.beginPath(); ctx.moveTo(x, 160); ctx.lineTo(x + 60, need[i] ? 100 : 220); ctx.stroke(); }
-    ctx.strokeStyle = '#3ddc97'; ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.moveTo(80, 160);
-    for (let i = 0; i < 3; i++) { const x = 150 + i * 110; ctx.lineTo(x, 160); }
-    ctx.lineTo(460, 160); ctx.stroke();
-    for (let i = 0; i < 3; i++) { const x = 150 + i * 110; ctx.strokeStyle = this.lv[i] === need[i] ? '#3ddc97' : '#ff4d5e'; ctx.beginPath(); ctx.moveTo(x, 160); ctx.lineTo(x + 60, need[i] ? 100 : 220); ctx.stroke(); text(ctx, need[i] ? '↗' : '↘', x + 70, need[i] ? 90 : 236, 18, '#ffd23f'); }
-    text(ctx, `RUTA ${this.puzzle.route}`, 270, 80, 18, '#3ddc97');
-    for (let i = 0; i < 3; i++) lever(ctx, 120 + i * 120, 300, 80, this.lv[i] ? 1 : 0, '#ffd23f', `AG${i + 1}`);
-    rr(ctx, 540, 70, 100, 230, 18); fillStroke(ctx, '#212529', INK, 4);
-    led(ctx, 590, 120, this.aspect === 'rojo' ? '#ff4d5e' : '#3a1418', 22);
-    led(ctx, 590, 190, '#3a3414', 22);
-    led(ctx, 590, 260, this.aspect === 'verde' ? '#3ddc97' : '#143a26', 22);
-    btn(ctx, 520, 330, 140, 60, 'VÍA LIBRE', '#22a06b');
-  }
-  override down(x: number, y: number) {
-    for (let i = 0; i < 3; i++) if (inRect(x, y, 90 + i * 120, 290, 60, 110)) { this.lv[i] = !this.lv[i]; this.sink.sfx('click'); }
-    if (inRect(x, y, 520, 330, 140, 60)) {
-      if (this.lv.every((v, i) => v === this.puzzle.levers[i])) { this.aspect = 'verde'; this.submit({ levers: this.lv, aspect: 'verde' }); }
-      else { this.badFlash = 1; this.sink.sfx('bad'); }
-    }
-  }
-}
-
-// ------------------------------------------------------------ Frenos: lectura y calibración (tren)
-export class BrakesRead extends MG {
-  override init() { this.hint = 'Pulsa ANOTAR cuando la aguja del manómetro esté en la banda verde.'; }
-  private v() { return 0.5 + Math.sin(this.t * 1.3) * 0.38 + Math.sin(this.t * 3.1) * 0.06; }
-  override render(ctx: C) {
-    dial(ctx, 280, 220, 150, this.v(), this.puzzle.lo, this.puzzle.hi, 'FRENO');
-    btn(ctx, 500, 190, 160, 80, 'ANOTAR', '#ff8a3d');
-  }
-  override down(x: number, y: number) {
-    if (!inRect(x, y, 500, 190, 160, 80)) return;
-    const v = this.v();
-    if (v >= this.puzzle.lo && v <= this.puzzle.hi) this.submit({ value: v }); else { this.badFlash = 1; this.sink.sfx('bad'); }
-  }
-}
-
-export class BrakesSet extends MG {
-  v = 0.1; drag = false;
-  override init() { this.v = this.puzzle.target > 0.5 ? 0.05 : 0.95; this.hint = 'Gira el freno de mano hasta el valor anotado y pulsa FIJAR.'; }
-  override render(ctx: C) {
-    paper(ctx, 470, 60, 190, 110, 0.04);
-    text(ctx, 'Anotado:', 565, 95, 18, INK); text(ctx, `${Math.round(this.puzzle.target * 100)}`, 565, 132, 34, '#c8323f');
-    wheel(ctx, 220, 230, 130, this.v * Math.PI * 6, '#495057');
-    dial(ctx, 565, 260, 70, this.v, this.puzzle.target - this.puzzle.tol, this.puzzle.target + this.puzzle.tol);
-    text(ctx, `${Math.round(this.v * 100)}`, 565, 350, 22, '#fff', true);
-    btn(ctx, 490, 370, 150, 50, 'FIJAR', '#22a06b');
-  }
-  override down(x: number, y: number) {
-    if (inRect(x, y, 490, 370, 150, 50)) { if (Math.abs(this.v - this.puzzle.target) <= this.puzzle.tol) this.submit({ value: this.v }); else { this.badFlash = 1; this.sink.sfx('bad'); } return; }
-    if (Math.hypot(x - 220, y - 230) < 150) this.drag = true;
-  }
-  override up() { this.drag = false; }
-  override dragBy(dx: number, dy: number) { if (this.drag) this.v = Math.max(0, Math.min(1, this.v + (dx - dy) / 900)); }
 }
 

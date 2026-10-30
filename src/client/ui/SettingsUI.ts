@@ -1,11 +1,11 @@
 import { getMap } from '../../shared/maps';
-import type { MapId } from '../../shared/maps/types';
+import type { GameMode, MapId } from '../../shared/maps/types';
 import { ROLES, RoleDef } from '../../shared/roles';
-import { effectiveCriticalTime, GAME_FIELDS, GameSettings, RoomSettings, validateSettings } from '../../shared/settings';
+import { effectiveCriticalTime, GAME_FIELDS, GameSettings, KNIFE_PRESETS, knifeParams, RoomSettings, taskTotals, validateSettings } from '../../shared/settings';
 import { audio } from '../audio/Audio';
 import { Prefs, store } from '../state';
 import { clear, h, ICONS, modal } from './dom';
-import { mapCards } from './MapCards';
+import { mapCards, modeCards } from './MapCards';
 
 type Refresher = () => void;
 
@@ -52,15 +52,16 @@ export function toggle(label: string, get: () => boolean, set: (v: boolean) => v
 }
 
 /** Ajustes de partida del anfitrión (los invitados ven exactamente lo mismo en modo lectura). */
-export function showHostSettings(initialTab: 'partida' | 'mapa' | 'roles' = 'partida') {
+export function showHostSettings(initialTab: 'partida' | 'mapa' | 'roles' | 'super' = 'partida') {
   const room = store.room;
   if (!room) return;
   const isHost = room.hostId === store.net?.pid;
   const ro = !isHost;
   const refreshers: Refresher[] = [];
-  let tab = initialTab;
+  let tab: string = initialTab;
   let roleFilter: 'all' | 'worker' | 'impostor' = 'all';
   const s = () => store.room!.settings;
+  const mode = () => store.room!.settings.mode;
   let pending: Record<string, unknown> | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const send = (patch: Record<string, unknown>) => {
@@ -77,7 +78,7 @@ export function showHostSettings(initialTab: 'partida' | 'mapa' | 'roles' = 'par
   const refreshIssues = () => {
     clear(issuesBox);
     const humans = store.room!.players.filter((p) => p.connected).length;
-    const iss = validateSettings(s(), Math.max(humans, 4));
+    const iss = validateSettings(s(), Math.max(humans, 4), getMap(store.room!.mapId));
     document.querySelectorAll('.slider.invalid').forEach((e) => e.classList.remove('invalid'));
     if (!iss.length) return;
     issuesBox.append(h('ul', { class: 'issues' }, iss.map((i) => h('li', null, i.msg))));
@@ -85,39 +86,84 @@ export function showHostSettings(initialTab: 'partida' | 'mapa' | 'roles' = 'par
   };
   const body = h('div', { class: 'col' });
   const tabs = h('div', { class: 'tabs' });
-  const gameField = (key: keyof GameSettings) => {
+  const gameField = (key: keyof GameSettings, extra?: { readonly?: boolean; help?: string }) => {
     const f = GAME_FIELDS.find((x) => x.key === key)!;
-    let help = f.help;
+    let help = extra?.help ?? f.help;
     if (key === 'criticalTime') help += ` Efectivo en ${getMap(store.room!.mapId).texts.short.toLowerCase()}: ${effectiveCriticalTime(s().game, getMap(store.room!.mapId).critTimeScale)} s.`;
-    return slider({ label: f.label, min: f.min, max: f.max, step: f.step, unit: f.unit, help, readonly: ro, fieldKey: `game.${key}`, get: () => s().game[key] as number, set: (v) => send({ game: { [key]: v } }) }, refreshers);
+    return slider({ label: f.label, min: f.min, max: f.max, step: f.step, unit: f.unit, help, readonly: ro || !!extra?.readonly, fieldKey: `game.${key}`, get: () => s().game[key] as number, set: (v) => { send({ game: { [key]: v } }); refreshTotals(); } }, refreshers);
+  };
+  const totals = h('div', { class: 'totals small' });
+  const refreshTotals = () => {
+    const n = Math.max(store.room!.players.filter((p) => p.connected).length, 4);
+    const t = taskTotals(s().game, n);
+    totals.textContent = `${s().game.shortTasks} cortas + ${s().game.longTasks} larga${s().game.longTasks === 1 ? '' : 's'} por trabajador = ${t.perWorker} tareas cada uno · con ${n} personas (${t.workers} trabajadores): ${t.total} tareas en total. Las reparaciones y las tareas falsas del impostor no cuentan.`;
+  };
+  const header = () => {
+    // Modo y mapa: el modo decide qué controles existen; los incompatibles se ocultan.
+    const box = h('div', { class: 'col' });
+    const modes = modeCards(mode(), ro ? null : (m: GameMode) => { store.net?.emit('settings', { patch: null, mode: m }); });
+    const maps = mapCards(store.room!.mapId, ro || mode() === 'market' ? null : (id: MapId) => { store.net?.emit('settings', { patch: null, mapId: id }); maps.set(id); }, mode());
+    box.append(h('div', { class: 'field' }, h('label', null, 'Modo'), modes.el), h('div', { class: 'field' }, h('label', null, 'Mapa'), maps.el));
+    return box;
   };
   const render = () => {
     refreshers.length = 0;
     clear(tabs); clear(body);
-    for (const [id, name] of [['partida', 'PARTIDA'], ['mapa', 'MAPA'], ['roles', 'ROLES']] as const) tabs.append(h('button', { class: `tab${tab === id ? ' active' : ''}`, onclick: () => { tab = id; render(); } }, name));
+    const list: [string, string][] = mode() === 'market' ? [['partida', 'PARTIDA'], ['super', 'SUPERMERCADO']] : [['partida', 'PARTIDA'], ['mapa', 'MAPA Y CUCHILLO'], ['roles', 'ESPECIALIDADES']];
+    if (!list.some(([id]) => id === tab)) tab = 'partida';
+    for (const [id, name] of list) tabs.append(h('button', { class: `tab${tab === id ? ' active' : ''}`, onclick: () => { tab = id; render(); } }, name));
     if (ro) body.append(h('div', { class: 'badge' }, 'Modo lectura: solo el anfitrión puede editar'));
     body.append(issuesBox);
     if (tab === 'partida') {
-      const presetRow = h('div', { class: 'row wrap' }, h('span', { class: 'muted small' }, `Preset actual: ${({ clasico: 'CLÁSICO SIN ROLES', equilibrado: 'EQUILIBRADO', personalizado: 'PERSONALIZADO' } as const)[s().preset]}`));
-      if (!ro) for (const [id, name] of [['clasico', 'Restaurar CLÁSICO'], ['equilibrado', 'Restaurar EQUILIBRADO']]) presetRow.append(h('button', { class: 'btn ghost', onclick: () => { store.net?.emit('settings', { patch: { preset: id } }); } }, name));
-      body.append(presetRow);
+      body.append(header());
+      if (mode() === 'travel') {
+        const presetRow = h('div', { class: 'row wrap' }, h('span', { class: 'muted small' }, `Preset de especialidades: ${({ clasico: 'CLÁSICO SIN ROLES', equilibrado: 'EQUILIBRADO', personalizado: 'PERSONALIZADO' } as const)[s().preset]}`));
+        if (!ro) for (const [id, name] of [['clasico', 'Restaurar CLÁSICO'], ['equilibrado', 'Restaurar EQUILIBRADO']]) presetRow.append(h('button', { class: 'btn ghost', onclick: () => { store.net?.emit('settings', { patch: { preset: id } }); } }, name));
+        body.append(presetRow);
+      } else body.append(h('p', { class: 'small muted', style: 'margin:0' }, 'En el Supermercado no hay especialidades ni trampillas: todos tienen la misma información y el mismo tiempo de compra.'));
       const grid = h('div', { class: 'roles-grid' });
-      for (const f of GAME_FIELDS.filter((x) => x.tab === 'partida')) grid.append(gameField(f.key));
+      for (const f of GAME_FIELDS.filter((x) => x.tab === 'partida' && x.modes.includes(mode()))) grid.append(gameField(f.key));
       body.append(grid);
+      if (mode() === 'travel') { refreshTotals(); body.append(totals); }
       body.append(h('div', { class: 'row wrap', style: 'gap:22px' },
         toggle('Votos anónimos', () => s().game.anonymousVotes, (v) => send({ game: { anonymousVotes: v } }), refreshers, ro),
         toggle('Revelar bando al expulsar', () => s().game.revealTeam, (v) => send({ game: { revealTeam: v } }), refreshers, ro),
-        toggle('Tareas visuales', () => s().game.visualTasks, (v) => send({ game: { visualTasks: v } }), refreshers, ro, 'Desactivado por defecto: evita pruebas automáticas de inocencia.'),
+        toggle('Permitir SALTAR la votación', () => s().game.allowSkip, (v) => send({ game: { allowSkip: v } }), refreshers, ro),
+        mode() === 'travel' ? toggle('Tareas visuales', () => s().game.visualTasks, (v) => send({ game: { visualTasks: v } }), refreshers, ro, 'Desactivado por defecto: evita pruebas automáticas de inocencia.') : null,
       ));
-      const tb = h('div', { class: 'tabs' });
-      const renderTb = () => { clear(tb); for (const [id, name] of [['always', 'Siempre'], ['meetings', 'Al reunirse'], ['never', 'Nunca']] as const) tb.append(h('button', { class: `tab${s().game.taskBarMode === id ? ' active' : ''}`, disabled: ro, onclick: () => { send({ game: { taskBarMode: id } }); renderTb(); } }, name)); };
-      renderTb();
-      body.append(h('div', { class: 'field' }, h('label', null, 'Actualización de la barra de tareas'), tb));
-    } else if (tab === 'mapa') {
-      const cards = mapCards(store.room!.mapId, ro ? null : (id: MapId) => { store.net?.emit('settings', { patch: null, mapId: id }); cards.set(id); });
-      body.append(h('p', { class: 'small muted', style: 'margin:0' }, 'Cambiar de mapa descarta tareas y objetos de la próxima partida, pero conserva jugadores y ajustes. Los plazos críticos se ajustan a las distancias de cada vehículo.'), cards.el);
+      if (mode() === 'travel') {
+        const tb = h('div', { class: 'tabs' });
+        const renderTb = () => { clear(tb); for (const [id, name] of [['always', 'Siempre'], ['meetings', 'Al reunirse'], ['never', 'Nunca']] as const) tb.append(h('button', { class: `tab${s().game.taskBarMode === id ? ' active' : ''}`, disabled: ro, onclick: () => { send({ game: { taskBarMode: id } }); renderTb(); } }, name)); };
+        renderTb();
+        body.append(h('div', { class: 'field' }, h('label', null, 'Actualización de la barra de tareas'), tb));
+      }
+    } else if (tab === 'super') {
       const grid = h('div', { class: 'roles-grid' });
-      for (const f of GAME_FIELDS.filter((x) => x.tab === 'mapa')) grid.append(gameField(f.key));
+      for (const f of GAME_FIELDS.filter((x) => x.tab === 'super')) grid.append(gameField(f.key));
+      body.append(grid);
+      body.append(toggle('Evitar comidas recientes de esta sala', () => s().game.avoidRecentDishes, (v) => send({ game: { avoidRecentDishes: v } }), refreshers, ro));
+      body.append(h('p', { class: 'small muted', style: 'margin:0' }, 'La revelación en caja empieza cuando todos han entregado o se agota el tiempo; su duración no resta tiempo de compra. La comida secreta nunca aparece en este resumen.'));
+    } else if (tab === 'mapa') {
+      // Dificultad del cuchillo: cambia la cadena real (etapas, ayuda y dispersión).
+      const kd = h('div', { class: 'tabs' });
+      const kdText = h('p', { class: 'small', style: 'margin:0' });
+      const renderKd = () => {
+        clear(kd);
+        for (const id of ['facil', 'normal', 'dificil', 'personalizada'] as const) kd.append(h('button', { class: `tab${s().game.knifeDifficulty === id ? ' active' : ''}`, disabled: ro, onclick: () => { send({ game: { knifeDifficulty: id } }); render(); } }, id === 'personalizada' ? 'PERSONALIZADA' : KNIFE_PRESETS[id].label));
+        const d = s().game.knifeDifficulty;
+        const kp = knifeParams(s().game);
+        kdText.textContent = d === 'personalizada' ? `Personalizada: ${kp.stages} etapas, ayuda ${kp.help}, dispersión ${kp.spread}.` : KNIFE_PRESETS[d].text;
+      };
+      renderKd();
+      body.append(h('div', { class: 'field' }, h('label', null, 'Dificultad para conseguir el cuchillo'), kd, kdText,
+        h('span', { class: 'small muted' }, 'Es independiente de la probabilidad de recibir una especialidad de impostor. No cambia las condiciones de victoria ni la duración de los sabotajes.')));
+      const custom = s().game.knifeDifficulty !== 'personalizada';
+      const kgrid = h('div', { class: 'roles-grid' });
+      for (const k of ['knifeStages', 'knifeHelp', 'knifeSpread'] as const) kgrid.append(gameField(k, { readonly: custom, help: custom ? 'Elige PERSONALIZADA para ajustarlo.' : undefined }));
+      body.append(kgrid);
+      body.append(h('p', { class: 'small muted', style: 'margin:0' }, 'Sabotajes, trampillas y taquillas del vehículo (los plazos críticos se ajustan a sus distancias):'));
+      const grid = h('div', { class: 'roles-grid' });
+      for (const f of GAME_FIELDS.filter((x) => x.tab === 'mapa' && !x.key.startsWith('knife'))) grid.append(gameField(f.key));
       body.append(grid);
     } else {
       const filt = h('div', { class: 'tabs' });
@@ -130,10 +176,13 @@ export function showHostSettings(initialTab: 'partida' | 'mapa' | 'roles' = 'par
     refreshIssues();
   };
   render();
+  let lastMode = mode(), lastMap = store.room!.mapId;
   const off = store.on('room', () => {
     if (!store.room) { m.close(); return; }
     if (pending) return;
+    if (store.room.settings.mode !== lastMode || store.room.mapId !== lastMap) { lastMode = store.room.settings.mode; lastMap = store.room.mapId; render(); return; }
     for (const r of refreshers) r();
+    refreshTotals();
     refreshIssues();
   });
   const m = modal(isHost ? 'Ajustes de la sala' : 'Ajustes de la sala (lectura)', h('div', { class: 'col' }, tabs, body), { wide: true, onClose: () => off() });
@@ -213,7 +262,7 @@ export function showPrefs() {
         tip('Moverse', 'WASD o flechas. En móvil, joystick a la izquierda.'),
         tip('Acciones', 'E usar · V trampilla · X sabotear · T atacar · Q (configurable) habilidad.'),
         tip('Mapa y paneles', 'M o Tab abre el mapa. Escape cierra paneles. Intro abre el chat en reuniones.'),
-        tip('Diagnóstico', 'F3 muestra colisiones, contorno, salas y coordenadas (depuración).'),
+        tip('Depuración', 'F3: contorno visual (blanco), colisión (verde), oclusión de visión (magenta), sombra (azul), muros y puertas.'),
       ));
     }
   };

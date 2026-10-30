@@ -74,7 +74,17 @@ export class Store {
   }
   /** Tiempo de juego estimado (avanza solo en exploración). */
   gtNow(): number {
-    return this.gtBase + (this.pub?.phase === 'EXPLORACION' && this.gtAt ? performance.now() - this.gtAt : 0);
+    const ph = this.pub?.phase;
+    return this.gtBase + ((ph === 'EXPLORACION' || ph === 'COMPRA') && this.gtAt ? performance.now() - this.gtAt : 0);
+  }
+  /**
+   * Segundos restantes hasta un plazo absoluto del servidor (fuente única de cada fase).
+   * Se deriva en cada consulta: renders, mensajes repetidos o reconexiones no lo reinician.
+   */
+  secsLeft(deadline: number | null): number {
+    if (!deadline) return 0;
+    const now = this.net ? this.net.serverNow() : Date.now();
+    return Math.max(0, Math.ceil((deadline - now) / 1000));
   }
   gtBase = 0;
   gtAt = 0;

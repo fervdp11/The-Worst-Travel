@@ -1,3 +1,5 @@
+import { PRODUCT_BY_ID } from '../../shared/market';
+import { drawProductIcon } from '../art/products';
 /** Utilidades DOM mínimas para la interfaz (sin dependencias). */
 type Attrs = Record<string, unknown> & { class?: string; style?: string };
 type Child = Node | string | number | null | undefined | false | Child[];
@@ -64,9 +66,37 @@ export function modal(title: string, body: Node, opts: { wide?: boolean; onClose
   return { el: panel, close };
 }
 
+/** Convención única: segundos restantes redondeados hacia arriba y limitados a cero. */
 export function fmtTime(ms: number): string {
-  const s = Math.max(0, Math.ceil(ms / 1000));
+  return fmtSecs(Math.max(0, Math.ceil(ms / 1000)));
+}
+
+export function fmtSecs(secs: number): string {
+  const s = Math.max(0, Math.floor(secs));
   return s >= 60 ? `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` : `${s}`;
+}
+
+/** Icono de producto (cacheado por producto y tamaño). */
+const productCache = new Map<string, HTMLCanvasElement>();
+export function productIcon(id: string, size = 32): HTMLCanvasElement {
+  const key = `${id}|${size}`;
+  let base = productCache.get(key);
+  if (!base) {
+    base = document.createElement('canvas');
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    base.width = base.height = Math.round(size * dpr);
+    const ctx = base.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+    const p = PRODUCT_BY_ID[id];
+    if (p) drawProductIcon(ctx, p, size / 2, size / 2, size * 0.9);
+    productCache.set(key, base);
+  }
+  const c = document.createElement('canvas');
+  c.width = base.width; c.height = base.height;
+  c.style.width = c.style.height = `${size}px`;
+  c.className = 'picon';
+  c.getContext('2d')!.drawImage(base, 0, 0);
+  return c;
 }
 
 const svg = (paths: string) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -97,10 +127,13 @@ export const ICONS: Record<string, string> = {
   alarm: svg('<path d="M12 4a7 7 0 017 7v5l2 3H3l2-3v-5a7 7 0 017-7zM10 21h4"/>'),
   camera: svg('<rect x="3" y="7" width="13" height="10" rx="2"/><path d="M16 11l5-3v8l-5-3"/>'),
   eye: svg('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
-  ladder: svg('<path d="M7 2v20M17 2v20M7 6h10M7 11h10M7 16h10"/>'),
   door: svg('<rect x="5" y="2" width="14" height="20" rx="1"/><path d="M15 12h.01"/>'),
   emergency: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor"/>'),
-  train: svg('<rect x="5" y="3" width="14" height="14" rx="3"/><path d="M5 10h14M9 21l-2 2M15 21l2 2M8 14h.01M16 14h.01"/>'),
+  market: svg('<path d="M3 4h2l2.4 11.2a1 1 0 001 .8h9.2a1 1 0 001-.8L20 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/>'),
+  cart: svg('<path d="M3 4h2l2.4 11.2a1 1 0 001 .8h9.2a1 1 0 001-.8L20 8H6"/><circle cx="9" cy="20" r="1.4"/><circle cx="17" cy="20" r="1.4"/>'),
+  bag: svg('<path d="M5 8h14l-1 13H6z"/><path d="M9 8V6a3 3 0 016 0v2"/>'),
+  scan: svg('<path d="M4 7V4h3M17 4h3v3M20 17v3h-3M7 20H4v-3M7 12h10"/>'),
+  arrow: svg('<path d="M5 12h14M13 6l6 6-6 6"/>'),
   ship: svg('<path d="M3 15l2 5h14l2-5zM6 15V9h12v6M10 9V5h4v4"/>'),
   plane: svg('<path d="M2 13l8-2 4-8 2 1-2 8 7 3v2l-8-1-3 6h-2l1-6-7-1z"/>'),
   back: svg('<path d="M15 5l-7 7 7 7"/>'),

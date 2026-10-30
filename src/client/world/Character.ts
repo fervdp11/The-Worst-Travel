@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { AnimCode } from '../../shared/protocol';
 import { CH_RES } from '../art/characters';
+import { accessoryKey, accessoryPos, ACCESSORY_ANCHORS, AccessoryAnchor, RESP_HAT } from '../art/compose';
 
 const S = 1 / CH_RES;
 const STRIDE = 34; // unidades de mundo por ciclo de paso
@@ -46,7 +47,15 @@ export class Character {
   seated = false;
   carrying = false;
   distort = false;
+  /** Lleva una bolsa de compra cerrada (supermercado). */
+  bag = false;
+  /** 0 = fuera, 1 = dentro de trampilla/taquilla (lo fija la escena por evento, no por proximidad). */
+  hidden = 0;
+  hideKind: 'vent' | 'locker' = 'vent';
+  /** Color local del nombre (solo el propio impostor ve el suyo en rojo). */
+  nameColor: string | null = null;
   private act: string | null = null;
+  private hatAnchor: AccessoryAnchor | null = null;
 
   constructor(private scene: Phaser.Scene, layer: Phaser.GameObjects.Layer, look: CharLook) {
     this.look = look;
@@ -74,7 +83,7 @@ export class Character {
   private bodyKey() {
     const l = this.look;
     if (l.kind === 'passenger') return `px_body_${(l.variant ?? 0) % 8}`;
-    if (l.kind === 'responsible') return `resp_body_${l.map ?? 'train'}`;
+    if (l.kind === 'responsible') return `resp_body_${l.map ?? 'ship'}`;
     if (l.kind === 'ghost') return `ch_ghost_${l.color}`;
     return `ch_body_${l.color}`;
   }
@@ -83,13 +92,10 @@ export class Character {
     if (this.hat) { this.hat.destroy(); this.hat = null; }
     const l = this.look;
     let key: string | null = null;
-    if (l.kind === 'responsible') key = `resp_hat_${l.map ?? 'train'}`;
-    else if (l.kind === 'player' || l.kind === 'ghost') {
-      if (l.acc === 9) key = null;
-      else if ([3, 4, 6, 7].includes(l.acc)) key = `ch_acc_${l.acc}_${l.color}`;
-      else key = `ch_acc_${l.acc}`;
-    }
-    if (!key || !this.scene.textures.exists(key)) return;
+    this.hatAnchor = null;
+    if (l.kind === 'responsible') { key = `resp_hat_${l.map ?? 'ship'}`; this.hatAnchor = RESP_HAT; }
+    else if (l.kind === 'player' || l.kind === 'ghost') { key = accessoryKey(l.color, l.acc); this.hatAnchor = ACCESSORY_ANCHORS[l.acc] ?? null; }
+    if (!key || !this.hatAnchor || !this.scene.textures.exists(key)) return;
     this.hat = this.scene.add.image(0, -40, key).setScale(S).setOrigin(0.5, 1);
     this.root.addAt(this.hat, 4);
   }
@@ -155,9 +161,7 @@ export class Character {
         break;
       }
       case 'cams': hl = { x: 12, y: -22 }; hr = { x: 19, y: -22 }; itemKey = 'ch_tablet'; itemPos = { x: 17, y: -26 }; break;
-      case 'climb': { const k = Math.sin(t * 12); hl = { x: -8, y: -40 + k * 6 }; hr = { x: 8, y: -40 - k * 6 }; bodyY = -6 - Math.abs(k) * 3; break; }
-      case 'ventIn': case 'ventOut': { const k = anim === 'ventIn' ? Math.min(1, (t * 3) % 1.2) : 1 - Math.min(1, (t * 3) % 1.2); scaleY = 1 - k * 0.6; scaleX = 1 + k * 0.25; bodyY = -3 + k * 18; hideFeet = k > 0.5; break; }
-      case 'lockerIn': case 'lockerOut': rootAlpha = 0.6; scaleX = 0.9; break;
+      case 'pick': { hr = { x: 20, y: -30 }; hl = { x: 12, y: -24 }; bodyRot = 0.08; break; }
       case 'attack': { const k = Math.sin(t * 14); bodyRot = 0.12 + k * 0.08; hr = { x: 20 + k * 6, y: -22 }; hl = { x: 10 + k * 4, y: -20 }; bodyY = -3 - Math.abs(k) * 2; break; }
       case 'cast': { const k = Math.sin(t * 20); scaleX = 1 + k * 0.08; scaleY = 1 - k * 0.08; break; }
       case 'stopped': rootAlpha = 0.75; break;
@@ -169,16 +173,33 @@ export class Character {
       if (this.act === 'phone') { itemKey = 'ch_phone'; itemPos = { x: 16, y: -24 }; hr = { x: 15, y: -22 }; }
       if (this.act === 'order') { hr = { x: 12, y: -40 + Math.sin(t * 3) * 3 }; }
     }
-    if (this.carrying && anim !== 'climb') { itemKey = 'ch_tray'; itemPos = { x: 16, y: -28 + bob }; hl = { x: 10, y: -24 + bob }; hr = { x: 22, y: -24 + bob }; }
+    if (this.carrying) { itemKey = 'ch_tray'; itemPos = { x: 16, y: -28 + bob }; hl = { x: 10, y: -24 + bob }; hr = { x: 22, y: -24 + bob }; }
+    else if (this.bag && anim !== 'pick') { itemKey = 'ch_bag'; itemPos = { x: 20, y: -10 + bob }; hr = { x: 19, y: -18 + bob }; }
+    // Entrar/salir de trampilla o taquilla: progreso único 0→1 dirigido por evento (sin bucles).
+    const hk = this.hidden;
+    let hideAll = false;
+    if (hk > 0) {
+      if (this.hideKind === 'vent') {
+        // Se agacha y desciende por la tapa; el nombre desaparece cuando el cuerpo queda oculto.
+        scaleY = 1 - hk * 0.75; scaleX = 1 + hk * 0.2; bodyY = -3 + hk * 22; hideFeet = hk > 0.3;
+        hl = { x: -10, y: -10 + hk * 10 }; hr = { x: 10, y: -10 + hk * 10 };
+      } else {
+        // Da un paso hacia la puerta de la taquilla y se ocultan manos y complementos.
+        bodyY = -3 - hk * 6; scaleX = 1 - hk * 0.25;
+      }
+      rootAlpha *= 1 - Math.max(0, hk - 0.55) / 0.45;
+      hideAll = hk >= 0.98;
+    }
     if (this.look.kind === 'ghost') { hideFeet = true; bodyY = -10 + Math.sin(t * 2) * 3; rootAlpha = 0.5; }
     this.footL.setPosition(fl.x * flip, fl.y).setVisible(!hideFeet);
     this.footR.setPosition(fr.x * flip, fr.y).setVisible(!hideFeet);
     this.body.setPosition(0, bodyY).setRotation(bodyRot * flip).setScale(S * scaleX * (sx < 0 ? -1 : 1) * Math.max(0.2, Math.abs(sx)), S * scaleY);
-    this.handL.setPosition(hl.x * flip, hl.y);
-    this.handR.setPosition(hr.x * flip, hr.y);
-    if (this.hat) {
-      const hatY = bodyY - 40 * scaleY;
-      this.hat.setPosition(Math.sin(bodyRot) * 30 * flip + 2 * flip, hatY + (this.look.acc === 7 ? 22 : this.look.acc === 8 ? 10 : 0)).setRotation(bodyRot * flip).setScale(S * (sx < 0 ? -1 : 1), S);
+    this.handL.setPosition(hl.x * flip, hl.y).setVisible(!hideAll && hk < 0.6);
+    this.handR.setPosition(hr.x * flip, hr.y).setVisible(!hideAll && hk < 0.6);
+    if (this.hat && this.hatAnchor) {
+      // Mismo anclaje que los retratos: el complemento sigue a la cabeza, ojos o cuello.
+      const hp = accessoryPos(this.hatAnchor, bodyY, bodyRot, scaleY, flip as 1 | -1);
+      this.hat.setPosition(hp.x, hp.y).setRotation(bodyRot * flip).setScale(S * (sx < 0 ? -1 : 1) * Math.max(0.2, Math.abs(sx)), S * scaleY).setVisible(!hideAll && hk < 0.7);
     }
     if (itemKey) { this.item.setTexture(itemKey).setVisible(true).setPosition(itemPos.x * flip, itemPos.y).setScale(S * flip, S); }
     else this.item.setVisible(false);
@@ -196,7 +217,9 @@ export class Character {
     this.root.setAlpha(a);
     this.root.setVisible(a > 0.02);
     const nameY = y - 62 + (this.seated ? 10 : 0);
-    this.nameText.setPosition(x, nameY).setDepth(1e7 + y).setAlpha(this.alpha).setVisible(this.alpha > 0.05 && this.look.kind !== 'passenger');
+    if (this.nameColor && this.nameText.style.color !== this.nameColor) this.nameText.setColor(this.nameColor);
+    this.nameText.setPosition(x, nameY).setDepth(1e7 + y).setAlpha(this.alpha).setVisible(this.alpha > 0.05 && this.look.kind !== 'passenger' && hk < 0.5);
+    if (hideAll) this.root.setVisible(false);
   }
 
   destroy() {

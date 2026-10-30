@@ -1,9 +1,9 @@
 import {
-  BASE_SPEED, BASE_VISION, EJECT_MS, INTRO_MS, MAX_INPUT_BUFFER, MEETING_CALL_MS, MIN_VISION, RECONNECT_GRACE_MS,
+  BASE_SPEED, BASE_VISION, EJECT_EMPTY_MS, EJECT_MS, INTRO_MS, MAX_INPUT_BUFFER, MEETING_CALL_MS, MIN_VISION, RECONNECT_GRACE_MS,
   RESULTS_MS, SIM_DT, SNAPSHOT_EVERY,
 } from '../../shared/constants';
 import { getMap, getRuntime } from '../../shared/maps';
-import type { MapDef, MapId } from '../../shared/maps/types';
+import type { GameMode, MapDef, MapId } from '../../shared/maps/types';
 import { DoorState, MapRuntime } from '../../shared/maps/runtime';
 import { stepMove } from '../../shared/movement';
 import type {
@@ -12,11 +12,12 @@ import type {
 } from '../../shared/protocol';
 import { Rng, randomId } from '../../shared/rng';
 import { ROLE_BY_ID, RoleId, Team } from '../../shared/roles';
-import { assignRoles, effectiveCriticalTime, GameSettings, RoomSettings } from '../../shared/settings';
+import { assignRoles, effectiveCriticalTime, GameSettings, knifeParams, RoomSettings } from '../../shared/settings';
 import { SKIP, tallyVotes } from '../../shared/votes';
 import { abilityTick, handleAbility, initAbility, abilityPrivate, cancelAbilitiesForMeeting, analystOnTaskDone } from './abilities';
 import { handleAction, completeTimed, cancelPlayerActivity, sabotageTick, stationLabel } from './interactions';
-import { generateKnifeChain, KnifeChain, describePlace } from './knife';
+import { generateKnifeChain, KnifeChain, describePlace, stageLabel } from './knife';
+import { afterReveal, expected, initMarket, marketAction, marketPrivate, marketPublic, marketTick, MarketState, marketUse, startRound } from './market';
 import { assignTasks, taskPrivate } from './tasks';
 import type { ActiveSabotage, Decoy, GPlayer, Interference, Sensor } from './types';
 import { buildSnapshot } from './visibility';
@@ -34,9 +35,13 @@ export interface GameInit {
   players: { id: string; name: string; color: number; acc: number; connected: boolean }[];
   practice?: { team: Team; role: RoleId | null } | null;
   clock?: () => number;
+  /** Comidas recientes de la sala (supermercado). */
+  recentDishes?: string[];
 }
 
 export class Game {
+  mode: GameMode;
+  market: MarketState | null = null;
   map: MapDef;
   rt: MapRuntime;
   gs: GameSettings;
@@ -79,6 +84,7 @@ export class Game {
     this.rt = getRuntime(init.mapId);
     this.gs = init.settings.game;
     this.settingsAll = init.settings;
+    this.mode = this.map.id === 'market' ? 'market' : 'travel';
     this.seed = init.seed;
     this.rng = new Rng(init.seed);
     this.practice = init.practice ?? null;
@@ -99,7 +105,9 @@ export class Game {
       roles = { [pid]: this.practice.role && ROLE_BY_ID[this.practice.role].team === this.practice.team ? this.practice.role : null };
       this.impostorId = this.practice.team === 'impostor' ? pid : null;
     } else {
-      const a = assignRoles(this.rng.fork('roles'), ids, init.settings);
+      // En el supermercado nadie tiene especialidades: misma información y tiempo para todos.
+      const rs = this.mode === 'market' ? { ...init.settings, roles: Object.fromEntries(Object.entries(init.settings.roles).map(([k, v]) => [k, { ...v, enabled: false, chance: 0 }])) as RoomSettings['roles'] } : init.settings;
+      const a = assignRoles(this.rng.fork('roles'), ids, rs);
       team = a.team;
       roles = a.roles;
       this.impostorId = a.impostor;
@@ -118,23 +126,30 @@ export class Game {
         saved: null, handles: new Map(), handleRev: new Map(), recentActs: [],
         abilityCooldownGt: 0, abilityUses: 0, activeEndsGt: 0, battery: 0, analystOpenSince: null, disguise: null, invisible: false,
         speedBoostEndsGt: 0, techBoostEndsGt: 0, tracker: null, observing: null, knife: null, lastDoorRects: new Set(),
-        dirtyPriv: true, anim: 'idle',
+        dirtyPriv: true, anim: 'idle', pickUntil: 0,
       };
+      if (this.mode === 'market') { p.role = null; p.meetingsLeft = 0; }
       this.players.set(p.id, p);
     });
-    const trng = this.rng.fork('tasks');
-    for (const p of this.players.values()) {
-      p.tasks = assignTasks(trng, this.map, this.gs, p.team === 'impostor');
-      initAbility(this, p, init.settings);
+    if (this.mode === 'travel') {
+      const trng = this.rng.fork('tasks');
+      for (const p of this.players.values()) {
+        p.tasks = assignTasks(trng, this.map, this.gs, p.team === 'impostor');
+        initAbility(this, p, init.settings);
+      }
+      if (this.impostorId) {
+        this.knife = generateKnifeChain(this.rng.fork('knife'), this.map, this.rt, knifeParams(this.gs));
+        const imp = this.players.get(this.impostorId)!;
+        imp.knife = { stage: 0, hasKnife: false, authorized: false, clue: '', codeParts: [], searched: [] };
+        this.refreshKnifeClue(imp);
+      }
+    } else {
+      this.market = initMarket(this, init.recentDishes ?? []);
     }
-    if (this.impostorId) {
-      this.knife = generateKnifeChain(this.rng.fork('knife'), this.map, this.gs.knifeComplexity);
-      const imp = this.players.get(this.impostorId)!;
-      imp.knife = { stage: 0, hasKnife: false, authorized: false, clue: '', codeParts: [], searched: [] };
-      this.refreshKnifeClue(imp);
-    }
-    const rd = this.map.responsible!;
-    this.responsible = { x: rd.patrol[0].x, y: rd.patrol[0].y, level: rd.level, alive: true, idx: 0, waitUntil: 0, facing: 1, struggling: false };
+    const rd = this.map.responsible;
+    this.responsible = rd
+      ? { x: rd.patrol[0].x, y: rd.patrol[0].y, level: rd.level, alive: true, idx: 0, waitUntil: 0, facing: 1, struggling: false }
+      : { x: 0, y: 0, level: this.rt.mainLevel, alive: false, idx: 0, waitUntil: 0, facing: 1, struggling: false };
     for (const p of this.players.values()) this.sendPriv(p);
   }
 
@@ -147,7 +162,8 @@ export class Game {
   commsDown() { return this.sabotage?.id === 'comms'; }
   isCritical() { return !!this.sabotage && this.sabotageDef()?.kind === 'critical'; }
   sabotageDef(id = this.sabotage?.id) { return id ? this.map.sabotages.find((s) => s.id === id) : undefined; }
-  isExploring() { return this.phase === 'EXPLORACION' && !this.ended; }
+  /** Fase de movimiento libre (exploración del viaje o compra del supermercado). */
+  isExploring() { return (this.phase === 'EXPLORACION' || this.phase === 'COMPRA') && !this.ended; }
   canMove(p: GPlayer) {
     if (!this.isExploring() || !p.connected || p.left) return false;
     if (!p.alive) return p.state === 'ghost' || p.state === 'free';
@@ -167,6 +183,9 @@ export class Game {
   settingsAll!: RoomSettings;
   visionOf(p: GPlayer) {
     if (!p.alive) return 2400;
+    if (this.mode === 'market') return Math.max(MIN_VISION, BASE_VISION * this.gs.visionMarket);
+    // Dentro de una trampilla solo se observa el entorno inmediato de la salida.
+    if (p.state === 'vent') return Math.min(230, BASE_VISION * this.gs.visionImpostor);
     if (p.team === 'impostor') return Math.max(MIN_VISION, BASE_VISION * this.gs.visionImpostor);
     const v = BASE_VISION * this.gs.visionWorker * (0.3 + 0.7 * this.lightsFactor);
     return Math.max(MIN_VISION, v);
@@ -213,6 +232,12 @@ export class Game {
     let res: string | null;
     try {
       if (msg.k === 'vote') res = this.vote(p, msg.target);
+      else if (this.mode === 'market') {
+        if (msg.k === 'use') res = marketUse(this, p, String(msg.st ?? ''));
+        else if (msg.k === 'close') { p.sysPanel = null; this.host.send(p.id, 'panel', null); res = null; }
+        else if (msg.k === 'pick' || msg.k === 'putback' || msg.k === 'deliver') res = marketAction(this, p, msg);
+        else res = 'silencio';
+      }
       else if (msg.k === 'ability') res = handleAbility(this, p, msg);
       else res = handleAction(this, p, msg);
     } catch (err) {
@@ -264,7 +289,12 @@ export class Game {
     this.dirtyPub = true;
     if (this.ended) return;
     if (p.team === 'impostor') {
-      this.endGame('workers', 'abandon', 'El impostor abandonó', 'El impostor ha abandonado el viaje. Los trabajadores ganan por abandono.', 'abandon');
+      this.endGame('workers', 'abandon', 'El impostor abandonó', this.mode === 'market' ? 'El impostor ha abandonado la compra. Los trabajadores ganan por abandono.' : 'El impostor ha abandonado el viaje. Los trabajadores ganan por abandono.', 'abandon');
+      return;
+    }
+    if (this.mode === 'market') {
+      if (![...this.players.values()].some((o) => o.team === 'worker' && !o.left)) this.endGame('cancelled', 'cancelled', 'Partida cancelada', 'Todos los trabajadores han abandonado.', 'cancelled');
+      else this.checkVotingComplete();
       return;
     }
     // Reasignar tareas pendientes entre trabajadores conectados (vivos o expulsados).
@@ -306,7 +336,11 @@ export class Game {
     if (this.ended && this.phase !== 'FINAL') return;
 
     this.phaseTick(now);
-    if (this.isExploring()) {
+    if (this.mode === 'market' && !this.ended) {
+      marketTick(this, now);
+      if (this.isExploring()) for (const p of this.players.values()) this.movePlayer(p);
+      else for (const p of this.players.values()) if (p.inputs.length) { p.ack = p.inputs[p.inputs.length - 1].s; p.inputs = []; }
+    } else if (this.isExploring()) {
       for (const p of this.players.values()) this.movePlayer(p);
       for (const p of this.players.values()) if (p.timed && this.gt >= p.timed.endGt) completeTimed(this, p);
       this.responsibleTick(elapsed);
@@ -422,14 +456,21 @@ export class Game {
     this.phaseEnds = durMs === null ? null : this.clock() + durMs;
     this.dirtyPub = true;
   }
+  /** Cambio de fase con plazo absoluto del servidor (única fuente temporal de la fase). */
+  setPhaseMs(ph: Phase, durMs: number | null) { this.setPhase(ph, durMs); }
 
   private phaseTick(now: number) {
     if (this.phaseEnds === null || now < this.phaseEnds) return;
     switch (this.phase) {
       case 'INICIO':
         if (now - this.startedAt < 15_000 && [...this.players.values()].some((p) => p.connected && !p.left && !this.ready.has(p.id))) return;
+        if (this.mode === 'market') { startRound(this); break; }
         this.setPhase('EXPLORACION', null);
         for (const p of this.players.values()) { p.state = 'free'; p.dirtyPriv = true; }
+        break;
+      case 'CAJA':
+        afterReveal(this);
+        if (this.gs.discussionTime === 0) this.phaseEnds = now;
         break;
       case 'DISCUSION':
         if (this.meeting && this.meeting.stage === 'call') {
@@ -445,19 +486,19 @@ export class Game {
         this.resolveVotes();
         break;
       case 'RESULTADOS': {
+        // La secuencia de resultados se reproduce SIEMPRE, con expulsado o con escena vacía.
         const ej = this.meeting?.results?.ejected;
-        if (ej) {
-          this.meeting!.stage = 'eject';
-          this.setPhase('EXPULSION', EJECT_MS);
-        } else this.endMeeting();
+        this.meeting!.stage = 'eject';
+        this.setPhase('EXPULSION', ej ? EJECT_MS : EJECT_EMPTY_MS);
         break;
       }
       case 'EXPULSION': {
         const ej = this.meeting?.results?.ejected;
         const ejp = ej ? this.players.get(ej) : undefined;
         if (ejp && ejp.team === 'impostor') {
-          this.endGame('workers', 'ejected', '¡Impostor expulsado!', `${ejp.name} era el impostor. El viaje sigue a salvo.`, 'ejected');
-        } else this.endMeeting();
+          this.endGame('workers', 'ejected', '¡Impostor expulsado!', this.mode === 'market' ? `${ejp.name} era el impostor: no sabía qué se cocinaba.` : `${ejp.name} era el impostor. El viaje sigue a salvo.`, 'ejected');
+        } else if (this.mode === 'market') this.nextMarketRound();
+        else this.endMeeting();
         break;
       }
       case 'FINAL':
@@ -492,8 +533,10 @@ export class Game {
 
   vote(p: GPlayer, target: string): string | null {
     if (this.phase !== 'VOTACION' || !this.meeting) return 'No es momento de votar.';
+    if (this.phaseEnds !== null && this.clock() > this.phaseEnds) return 'La votación ya se ha cerrado.';
     if (!p.alive || p.left) return 'No puedes votar.';
     if (this.meeting.votes[p.id]) return 'Ya has votado.';
+    if (target === SKIP && !this.gs.allowSkip) return 'En esta sala no se puede saltar la votación.';
     if (target !== SKIP) {
       const t = this.players.get(target);
       if (!t || !t.alive || t.left) return 'Voto no válido.';
@@ -527,6 +570,8 @@ export class Game {
       tie: t.tie,
       skipped: t.skipped,
       reveal: ej && this.gs.revealTeam ? ej.team : null,
+      cause: ej ? 'ejected' : t.tie ? 'tie' : t.skipped ? 'skip' : 'novotes',
+      rid: `r${this.tickNo}_${Object.keys(m.votes).length}`,
     };
     m.stage = 'results';
     if (ej) {
@@ -537,6 +582,19 @@ export class Game {
       this.sensors = this.sensors.filter((s) => s.owner !== ej.id);
     }
     this.setPhase('RESULTADOS', RESULTS_MS);
+  }
+
+  /** Supermercado: tras la secuencia, victoria por pareja o nueva compra con la misma comida. */
+  private nextMarketRound() {
+    this.meeting = null;
+    const active = expected(this);
+    const imp = active.find((p) => p.team === 'impostor');
+    const workers = active.filter((p) => p.team === 'worker');
+    if (imp && workers.length <= 1) {
+      this.endGame('impostor', 'pair', 'El impostor sobrevive', `Solo quedan ${imp.name} y una persona más: el impostor ha conseguido pasar desapercibido.`, 'pair');
+      return;
+    }
+    startRound(this);
   }
 
   private endMeeting() {
@@ -600,20 +658,21 @@ export class Game {
     let doorsOpenGt: number | null = null;
     for (const v of this.closedDoors.values()) doorsOpenGt = Math.max(doorsOpenGt ?? 0, v);
     return {
-      phase: this.phase, phaseEnds: this.phaseEnds, mapId: this.map.id as MapId, gt: this.gt, players,
+      phase: this.phase, phaseEnds: this.phaseEnds, mode: this.mode, mapId: this.map.id as MapId, gt: this.gt, players,
       taskProgress: this.gs.taskBarMode === 'never' ? null : this.lastShownProgress,
       sabotage: sabState, sabotageReadyGt: this.sabotageReadyGt, closedDoors: [...this.closedDoors.keys()], doorsOpenGt,
       arrival: this.arrival ? { endsGt: this.gt + this.arrival.remaining, paused: this.isCritical() } : null,
       meeting, buttonReadyGt: this.buttonReadyGt, camLeds: [...camLeds], result: this.result,
       sensors: this.sensors.map((s) => ({ id: s.id, x: s.x, y: s.y, l: s.level })),
       attackInProgress: this.responsible.struggling,
+      market: this.market ? marketPublic(this) : null,
     };
   }
   lastShownProgress = 0;
 
   buildPriv(p: GPlayer): PrivateState {
     const isImp = p.team === 'impostor';
-    const rd = this.map.responsible!;
+    const rd = this.map.responsible;
     const sabStations: PrivateState['sabotageStations'] = [];
     if (isImp || this.practice) {
       for (const sb of this.map.sabotages) for (const sid of sb.activation) {
@@ -622,22 +681,28 @@ export class Game {
       }
     }
     let knife: PrivateState['knife'] = null;
-    if (p.knife && this.knife) {
+    if (p.knife && this.knife && rd) {
+      const kc = this.knife;
+      const n = kc.kinds.length;
       const stage = p.knife.stage;
-      const opts = stage < 5 ? this.knife.options[stage] : [];
-      const place = stage < 5 ? describePlace(this.map, this.rt, opts, this.gs.knifeComplexity) : { text: '', hints: [] };
+      const opts = stage < n ? kc.options[stage] : [];
+      const place = stage < n ? describePlace(this.map, this.rt, opts, kc.help) : { text: '', hints: [] };
+      const steps: NonNullable<PrivateState['knife']>['steps'] = kc.kinds.map((k, i) => ({
+        label: i <= stage ? stageLabel(k, this.map.knife!, kc) : `Etapa ${i + 1}: se desbloquea al completar la anterior`,
+        state: i < stage ? 'done' : i === stage ? 'current' : 'locked',
+      }));
+      steps.push({ label: `Ataque final: ${rd.title.toLowerCase()} (${this.map.texts.accessGoal.toLowerCase()})`, state: stage >= n ? 'current' : 'locked' });
       knife = {
-        stage,
-        objective: stage < 5 ? this.map.knife!.stages[stage].label : this.map.texts.accessGoal,
+        stage, total: n, steps,
+        objective: stage < n ? stageLabel(kc.kinds[stage], this.map.knife!, kc) : this.map.texts.accessGoal,
         clue: p.knife.clue,
         codeParts: p.knife.codeParts,
         hasKnife: p.knife.hasKnife,
         authorized: p.knife.authorized,
-        hints: stage < 5 ? place.hints : [{ id: 'resp', name: rd.title, level: rd.level, x: this.responsible.x, y: this.responsible.y }],
+        hints: stage < n ? place.hints : [{ id: 'resp', name: rd.title, level: rd.level, x: this.responsible.x, y: this.responsible.y }],
       };
     }
-    let ventLinks: string[] = [];
-    if (p.vent) ventLinks = this.ventLinksFor(p.vent.id).map((l) => l.id);
+    const ventLinks: string[] = [];
     const sensor = this.sensors.find((s) => s.owner === p.id);
     return {
       team: p.team, role: p.role, roleName: p.role ? ROLE_BY_ID[p.role].name : 'Sin especialidad',
@@ -657,8 +722,9 @@ export class Game {
       invisible: p.invisible,
       techBoostEndsGt: p.techBoostEndsGt,
       speedBoostEndsGt: p.speedBoostEndsGt,
-      responsible: { title: rd.title, name: rd.name },
+      responsible: rd ? { title: rd.title, name: rd.name } : null,
       vision: this.visionOf(p),
+      market: this.market ? marketPrivate(this, p) : null,
     };
   }
 
@@ -676,10 +742,10 @@ export class Game {
   refreshKnifeClue(p: GPlayer) {
     if (!p.knife || !this.knife) return;
     const st = p.knife.stage;
-    if (st >= 5) {
-      p.knife.clue = `Autorización manipulada. ${this.map.texts.accessGoal}: acércate con el arma y mantén ATACAR.`;
+    if (st >= this.knife.kinds.length) {
+      p.knife.clue = `Todo listo. ${this.map.texts.accessGoal}: acércate con el arma y mantén ATACAR.`;
     } else {
-      const place = describePlace(this.map, this.rt, this.knife.options[st], this.gs.knifeComplexity);
+      const place = describePlace(this.map, this.rt, this.knife.options[st], this.knife.help);
       p.knife.clue = `Pista: ${place.text}.`;
     }
     p.dirtyPriv = true;

@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { AnyMapId, MapId } from '../../shared/maps/types';
+import type { AnyMapId, MapId, GameMode } from '../../shared/maps/types';
 import type { ChatMsg, EndResult, GameEvent, GameStart, PanelOpen, PrivateState, PublicGame, RoomState, Snapshot } from '../../shared/protocol';
 import type { RoleId, Team } from '../../shared/roles';
 import { generateCharacterTextures } from '../art/characters';
@@ -8,7 +8,9 @@ import { LocalTransport, Net, SocketTransport } from '../net/Net';
 import { store } from '../state';
 import { WorldScene } from '../world/WorldScene';
 import { playCinematic } from './Cinematics';
-import { clear, toast, uiRoot } from './dom';
+import { clear, h, ICONS, productIcon, toast, uiRoot } from './dom';
+import { PRODUCT_BY_ID } from '../../shared/market';
+import { portrait } from './Portrait';
 import { showEnd } from './EndScreen';
 import { HUD } from './HUD';
 import { Loading } from './Loading';
@@ -152,11 +154,11 @@ export class App {
     return new Promise((res) => { const off = net.on('welcome', () => { off(); res(); }); });
   }
 
-  async createRoom(mapId: MapId, maxPlayers: number, preset: string) {
+  async createRoom(mapId: MapId, maxPlayers: number, preset: string, mode: GameMode = 'travel') {
     audio.unlock();
     const net = this.connectOnline();
     await this.whenWelcome(net);
-    net.emit('create', { name: store.prefs.name, mapId, maxPlayers, preset });
+    net.emit('create', { name: store.prefs.name, mapId, maxPlayers, preset, mode });
   }
 
   async joinRoom(code: string) {
@@ -251,7 +253,7 @@ export class App {
     this.meeting?.destroy();
     this.meeting = new MeetingUI(this);
     this.ensureTouch();
-    audio.ambience(g.mapId);
+    audio.ambience(g.mapId === 'market' ? 'market' : g.mapId);
     audio.music(null);
     if (store.pub?.phase === 'INICIO' || !store.pub) showRoleCard(this);
     if (store.panel) this.panels.show(store.panel);
@@ -263,7 +265,9 @@ export class App {
     if (store.view === 'game') {
       if (p.phase !== this.lastPhase) {
         if (p.phase === 'DISCUSION' && this.lastPhase === 'EXPLORACION') { audio.sfx('meeting'); this.world.closeCamera(); }
-        if (p.phase === 'EXPLORACION' && this.lastPhase === 'INICIO') audio.sfx('start');
+        if ((p.phase === 'EXPLORACION' || p.phase === 'COMPRA') && this.lastPhase === 'INICIO') audio.sfx('start');
+        if (p.phase === 'CAJA') { this.panels?.show(null); audio.sfx('meeting'); }
+        if (p.phase === 'COMPRA' && this.lastPhase === 'EXPULSION') audio.sfx('start');
         this.lastPhase = p.phase;
       }
       const sabId = p.sabotage?.id ?? null;
@@ -295,6 +299,7 @@ export class App {
       case 'end': this.onEnd(e.result); break;
       case 'meeting': break;
       case 'teleport': case 'fx': this.world.onEvent(e); if (e.e === 'fx') audio.sfx(`fx_${e.fx}`); break;
+      case 'scan': this.showScan(e.entry); break;
       default: break;
     }
     this.panels?.onEvent(e);
@@ -311,6 +316,25 @@ export class App {
     await playCinematic(this, r);
     this.teardownGameUI();
     showEnd(this, r);
+  }
+
+  /** Aporte escaneado en caja: tarjeta grande con retrato, nombre y producto. */
+  private scanEl: HTMLElement | null = null;
+  private scanTimer: ReturnType<typeof setTimeout> | null = null;
+  private showScan(entry: import('../../shared/protocol').MarketEntry) {
+    audio.sfx(entry.product ? 'scan' : 'bad');
+    this.scanEl?.remove();
+    if (this.scanTimer) clearTimeout(this.scanTimer);
+    const pr = entry.product ? PRODUCT_BY_ID[entry.product] : null;
+    const pic = portrait(entry.color, entry.acc, 70);
+    this.scanEl = h('div', { class: 'scan-card', role: 'status', 'aria-live': 'polite' },
+      h('div', { class: 'small muted' }, `Caja · aporte ${entry.order}`),
+      h('div', { class: 'row', style: 'justify-content:center;gap:16px' }, pic, h('span', { class: 'scan-arrow', html: ICONS.arrow }), pr ? productIcon(pr.id, 70) : h('div', { class: 'noaporte big' }, '∅')),
+      h('h2', null, entry.name),
+      h('div', { class: 'title prod' }, pr ? pr.name : 'SIN APORTE'));
+    uiRoot().append(this.scanEl);
+    const per = (store.pub?.market?.reveal?.perMs ?? 3000);
+    this.scanTimer = setTimeout(() => { this.scanEl?.remove(); this.scanEl = null; }, Math.max(1400, per * 0.85));
   }
 
   backToLobby() {
@@ -332,6 +356,8 @@ export class App {
   }
 
   private teardownGameUI() {
+    this.scanEl?.remove(); this.scanEl = null;
+    if (this.scanTimer) { clearTimeout(this.scanTimer); this.scanTimer = null; }
     this.hud?.destroy(); this.hud = null;
     this.meeting?.destroy(); this.meeting = null;
     this.panels?.destroy(); this.panels = null;

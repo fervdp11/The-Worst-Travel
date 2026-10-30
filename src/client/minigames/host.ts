@@ -7,19 +7,17 @@ import type { App } from '../ui/App';
 import { h, ICONS } from '../ui/dom';
 import { MG, MGCtor } from './base';
 import { KAuth, KCompartment, KDocs, KKeypad, KSearch } from './knife';
-import { CritCoolant, CritKeyConfirm, CritLevers, CritNavAlign, CritPatch, CritPower, CritPumps, CritRelief, CritSeal, CritStabilize, CritTelegraph, CritValves, RepComms, RepLights } from './repairs';
-import { Assist, BrakesRead, BrakesSet, Cooking, Dishes, Drink, Filter, Fuses, Luggage, OrdersPick, OrdersServe, Pressure, Roof, Signal, Toilet, Wiring } from './tasks';
+import { CritNavAlign, CritPatch, CritPower, CritPumps, CritSeal, CritStabilize, CritTelegraph, CritValves, RepComms, RepLights } from './repairs';
+import { Assist, Cooking, Dishes, Drink, Filter, Fuses, Luggage, OrdersPick, OrdersServe, Pressure, Toilet, Wiring } from './tasks';
 import { Ballast, BallastTrim, Bilge, CabinPressure, CabinPressureDoor, Carts, Seal, Sorting } from './tasks2';
 
 /** Registro: identificador de minijuego → implementación con su propia acción. */
 export const REGISTRY: Record<string, MGCtor> = {
   orders_pick: OrdersPick, orders_serve: OrdersServe, cooking: Cooking, drink: Drink, dishes: Dishes, toilet: Toilet,
-  wiring: Wiring, fuses: Fuses, pressure: Pressure, filter: Filter, assist: Assist, luggage: Luggage, roof: Roof,
-  signal: Signal, brakes_read: BrakesRead, brakes_set: BrakesSet, bilge: Bilge, seal: Seal, ballast: Ballast,
-  ballast_trim: BallastTrim, carts: Carts, sorting: Sorting, cabinPressure: CabinPressure, cabinPressure_door: CabinPressureDoor,
-  rep_lights: RepLights, rep_comms: RepComms, crit_levers: CritLevers, crit_keyconfirm: CritKeyConfirm, crit_coolant: CritCoolant,
-  crit_relief: CritRelief, crit_patch: CritPatch, crit_pumps: CritPumps, crit_stabilize: CritStabilize, crit_telegraph: CritTelegraph,
-  crit_valves: CritValves, crit_seal: CritSeal, crit_power: CritPower, crit_navalign: CritNavAlign,
+  wiring: Wiring, fuses: Fuses, pressure: Pressure, filter: Filter, assist: Assist, luggage: Luggage, bilge: Bilge, seal: Seal,
+  ballast: Ballast, ballast_trim: BallastTrim, carts: Carts, sorting: Sorting, cabinPressure: CabinPressure, cabinPressure_door: CabinPressureDoor,
+  rep_lights: RepLights, rep_comms: RepComms, crit_patch: CritPatch, crit_pumps: CritPumps, crit_stabilize: CritStabilize,
+  crit_telegraph: CritTelegraph, crit_valves: CritValves, crit_seal: CritSeal, crit_power: CritPower, crit_navalign: CritNavAlign,
   k_docs: KDocs, k_search: KSearch, k_compartment: KCompartment, k_keypad: KKeypad, k_auth: KAuth,
 };
 

@@ -11,13 +11,13 @@ export interface MapXform {
   box: Rect;
 }
 
-/** Caja de encuadre común a todos los niveles (mismas proporciones al cambiar de planta). */
+/** Caja de encuadre del plano maestro (una sola planta). */
 export function mapBox(def: MapDef): Rect {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const lv of def.levels) for (const poly of lv.outline) for (const p of poly) {
     x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
   }
-  if (def.id === 'plane') { y0 = -380; y1 = 980; }
+  if (def.id === 'plane') { y0 = -200; y1 = 1260; }
   return { x: x0 - 40, y: y0 - 40, w: x1 - x0 + 80, h: y1 - y0 + 80 };
 }
 
@@ -49,13 +49,6 @@ export function levelBase(def: MapDef, level: string, w: number, h: number, labe
     }
     for (const e of PLANE.ENGINES) { ctx.beginPath(); ctx.ellipse(e.x, e.y, 130, 52, 0, 0, Math.PI * 2); ctx.fill(); }
   }
-  // Otros niveles en tenue para orientación
-  for (const other of def.levels) {
-    if (other.id === level) continue;
-    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2 * lw; ctx.setLineDash([8 * lw, 6 * lw]);
-    for (const poly of other.outline) { ctx.beginPath(); poly.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath(); ctx.stroke(); }
-    ctx.setLineDash([]);
-  }
   for (const poly of lv.outline) {
     ctx.beginPath(); poly.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.closePath();
     ctx.fillStyle = '#26304d'; ctx.fill();
@@ -68,10 +61,24 @@ export function levelBase(def: MapDef, level: string, w: number, h: number, labe
       ctx.fillRect(rc.x, rc.y, rc.w, rc.h);
     }
   }
+  if (def.market) {
+    for (const sec of def.market.sections) { ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.fillRect(sec.rect.x, sec.rect.y, sec.rect.w, sec.rect.h); }
+  }
   for (const wl of def.walls) {
-    if (wl.level !== level || wl.invisible || wl.kind === 'edge') continue;
+    if (wl.level !== level || wl.kind === 'edge') continue;
+    if (wl.seg) {
+      if (!wl.occludes) continue;
+      ctx.strokeStyle = '#0d1222'; ctx.lineWidth = wl.seg.half * 2; ctx.beginPath(); ctx.moveTo(wl.seg.ax, wl.seg.ay); ctx.lineTo(wl.seg.bx, wl.seg.by); ctx.stroke();
+      continue;
+    }
+    if (wl.invisible) continue;
     ctx.fillStyle = wl.kind === 'rail' ? 'rgba(255,255,255,0.4)' : '#0d1222';
     ctx.fillRect(wl.rect.x, wl.rect.y, wl.rect.w, wl.rect.h);
+  }
+  // Muebles altos que bloquean el paso (estanterías, mostradores): orientación sin detalles.
+  for (const p of def.props) {
+    if (p.level !== level || p.flat || !p.solid || p.h < 60 || p.kind === 'railLine') continue;
+    ctx.fillStyle = 'rgba(13,18,34,0.55)'; ctx.fillRect(p.rect.x, p.rect.y, p.rect.w, p.rect.h);
   }
   for (const d of def.doors) {
     if (d.level !== level) continue;
@@ -79,14 +86,10 @@ export function levelBase(def: MapDef, level: string, w: number, h: number, labe
     const r = d.rect;
     if (d.orient === 'h') ctx.fillRect(r.x, r.y + r.h - 6 * lw * 3, r.w, 6 * lw * 3); else ctx.fillRect(r.x, r.y, r.w, r.h);
   }
-  for (const l of def.ladders) for (const end of [l.a, l.b]) {
-    if (end.level !== level) continue;
-    ctx.fillStyle = '#5cc8ff'; ctx.beginPath(); ctx.arc(end.x, end.y, 9 * lw * 2.2, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = INK; ctx.lineWidth = 2 * lw; ctx.stroke();
-  }
   for (const s of def.stations) {
-    if (s.level !== level || s.kind !== 'emergency') continue;
-    ctx.fillStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(s.x, s.y, 9 * lw * 2.2, 0, Math.PI * 2); ctx.fill();
+    if (s.level !== level) continue;
+    if (s.kind === 'emergency') { ctx.fillStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(16, 5 * lw), 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.5 * lw; ctx.stroke(); }
+    if (s.kind === 'checkout') { ctx.fillStyle = '#3ddc97'; ctx.fillRect(s.x - 30, s.y - 14, 60, 28); ctx.strokeStyle = INK; ctx.lineWidth = 2 * lw; ctx.strokeRect(s.x - 30, s.y - 14, 60, 28); }
   }
   ctx.restore();
   if (labels) {
@@ -95,12 +98,13 @@ export function levelBase(def: MapDef, level: string, w: number, h: number, labe
     const fs = Math.max(9, Math.min(15, X.s * 60));
     ctx.font = `800 ${fs}px "Nunito", sans-serif`;
     const seen = new Set<string>();
-    for (const r of def.rooms) {
+    const named = def.market ? def.market.sections.map((sec) => ({ name: sec.name, rect: sec.rect, level })) : def.rooms;
+    for (const r of named) {
       if (r.level !== level || seen.has(r.name)) continue;
       if (r.rect.w * X.s < 34 || r.rect.h * X.s < 12) continue;
       seen.add(r.name);
       const cx = X.ox + (r.rect.x + r.rect.w / 2) * X.s, cy = X.oy + (r.rect.y + r.rect.h / 2) * X.s;
-      let txt = r.name.replace('Techo · ', '');
+      let txt = r.name;
       const maxW = r.rect.w * X.s - 4;
       while (txt.length > 4 && ctx.measureText(txt).width > maxW) txt = `${txt.slice(0, -2)}…`.replace('……', '…');
       if (ctx.measureText(txt).width > maxW) continue;

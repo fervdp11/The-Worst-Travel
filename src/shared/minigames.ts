@@ -142,30 +142,6 @@ const defs: MinigameDef[] = [
     check: (p, _part, a) => Array.isArray(a?.map) && a.map.length === p.bags.length && new Set(a.map).size === p.bags.length && a.map.every((s: number, i: number) => p.slots[s] === p.bags[i]),
   },
   {
-    id: 'roof', parts: 2, minMs: [1200, 900],
-    gen: (rng) => ({ target: rng.range(0.15, 0.85), tol: 0.06 }),
-    check: (p, part, a) => (part === 0 ? Math.abs(num(a?.angle) - p.target) <= p.tol : num(a?.anchors) === 3),
-  },
-  {
-    id: 'signal', parts: 1, minMs: [1500],
-    gen: (rng) => ({ route: rng.pick(['A', 'B', 'C']), levers: [rng.chance(0.5), rng.chance(0.5), rng.chance(0.5)] }),
-    check: (p, _part, a) => sameSeq(a?.levers, p.levers) && a?.aspect === 'verde',
-  },
-  {
-    id: 'brakes_read', parts: 1, minMs: [1500],
-    gen: (rng) => {
-      const lo = rng.range(0.35, 0.6);
-      return { lo, hi: lo + 0.14 };
-    },
-    check: (p, _part, a) => num(a?.value) >= p.lo - 0.01 && num(a?.value) <= p.hi + 0.01,
-    remember: (_p, a) => ({ value: Math.round(num(a?.value) * 100) / 100 }),
-  },
-  {
-    id: 'brakes_set', parts: 1, minMs: [1500],
-    gen: (_rng, ctx) => ({ target: (ctx.memory?.value as number) ?? 0.5, tol: 0.05 }),
-    check: (p, _part, a) => Math.abs(num(a?.value) - p.target) <= p.tol,
-  },
-  {
     id: 'bilge', parts: 2, minMs: [2800, 400],
     gen: (rng) => ({ strokes: rng.int(6, 8) }),
     check: (p, part, a) => (part === 0 ? num(a?.strokes) >= p.strokes : trueish(a?.valve)),
@@ -227,14 +203,6 @@ const defs: MinigameDef[] = [
     gen: (rng) => ({ target: rng.range(0.1, 0.9) }),
     check: (p, part, a) => (part === 0 ? Math.abs(num(a?.freq) - p.target) <= 0.035 : trueish(a?.synced)),
   },
-  { id: 'crit_levers', parts: 1, minMs: [1300], gen: (rng) => ({ order: perm(rng, 4) }), check: (p, _part, a) => sameSeq(a?.order, p.order) },
-  { id: 'crit_keyconfirm', parts: 2, minMs: [500, 1500], gen: () => ({}), check: (_p, part, a) => (part === 0 ? trueish(a?.key) : trueish(a?.hold)) },
-  {
-    id: 'crit_coolant', parts: 1, minMs: [1300],
-    gen: (rng) => ({ valves: 5, open: rng.shuffle([0, 1, 2, 3, 4]).slice(0, 3).sort() }),
-    check: (p, _part, a) => sameSet(a?.open, p.open),
-  },
-  { id: 'crit_relief', parts: 1, minMs: [1500], gen: (rng) => ({ target: rng.range(0.55, 0.85), tol: 0.06 }), check: (p, _part, a) => Math.abs(num(a?.angle) - p.target) <= p.tol },
   { id: 'crit_patch', parts: 2, minMs: [700, 1200], gen: (rng) => ({ leak: [rng.range(0.3, 0.7), rng.range(0.35, 0.65)] }), check: (_p, part, a) => (part === 0 ? trueish(a?.patched) : num(a?.bolts) === 4) },
   { id: 'crit_pumps', parts: 1, minMs: [1500], gen: (rng) => ({ order: perm(rng, 3) }), check: (p, _part, a) => sameSeq(a?.order, p.order) && trueish(a?.lever) },
   {
@@ -280,7 +248,6 @@ export const MINIGAMES: Record<string, MinigameDef> = Object.fromEntries(defs.ma
 export function taskMinigame(type: string, stage: number): string {
   const multi: Record<string, string[]> = {
     orders: ['orders_pick', 'orders_serve'],
-    brakes: ['brakes_read', 'brakes_set'],
     ballast: ['ballast', 'ballast_trim'],
     cabinPressure: ['cabinPressure', 'cabinPressure_door'],
   };

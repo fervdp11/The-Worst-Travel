@@ -39,9 +39,12 @@ export class LocalTransport implements Transport {
   private statusCb: ((s: 'connected') => void) | null = null;
   private session: { handle(ev: string, d: unknown): void; onDisconnect(): void } | null = null;
   private queue: [string, unknown][] = [];
+  /** Gestor de salas local (modo práctica); accesible para diagnóstico. */
+  mgr: unknown = null;
   async init() {
     const { RoomManager } = await import('../../server/room/RoomManager');
     const mgr = new RoomManager();
+    this.mgr = mgr;
     this.session = mgr.connect({
       send: (ev, data) => {
         // Clonado estructurado: el cliente nunca comparte objetos con la simulación.

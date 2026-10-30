@@ -18,60 +18,39 @@ Navegador (Phaser 3 WebGL + DOM)            Servidor (Node.js + Socket.IO)
               └───────────────────── mismo código en ambos lados ───────────
 ```
 
-- **Plano maestro único** (`src/shared/maps`): cada vehículo se construye con `MapBuilder` a partir de constantes. De ese plano salen la colisión y la visión (`MapRuntime`), el render horneado (`MapPainter`), el minimapa y el mapa ampliado (`MapDraw`) y la validación (`validate.ts`). No hay geometrías paralelas.
+- **Plano maestro único** (`src/shared/maps`): cada mapa se construye con `MapBuilder` a partir de constantes y tiene **una sola planta**. De ese plano salen la colisión y la visión (`MapRuntime`), el render horneado (`MapPainter`), el minimapa y el mapa ampliado (`MapDraw`) y la validación (`validate.ts`). No hay geometrías paralelas.
+- **Una definición por objeto** (`objects.ts`): de cada mueble se derivan por separado su colisión (huella en el suelo más la parte alta proyectada, sin huecos por los que colarse en diagonal), su oclusión (solo los objetos altos tapan la vista), su tipo de sombra (soporte, base del mástil, contacto… nunca un óvalo genérico) y su rectángulo visual y profundidad. Los muebles son opacos; las interacciones se hacen desde el lado accesible.
 - **Autoridad del servidor**: el cliente envía direcciones cuantizadas con número de secuencia y acciones con identificador. El servidor aplica cada entrada como un paso de 1/30 s con un sistema de créditos que impide acelerar; valida estación, distancia, línea de visión, fase y prerrequisitos; los minijuegos se validan por partes con puzle generado en el servidor, respuesta comprobada y duración mínima plausible.
-- **Visibilidad**: cada instantánea se filtra por observador (radio de visión + línea de visión contra muros y puertas cerradas, más lo que muestre su cámara activa). Las entidades usan identificadores opacos por observador; disfraces y señuelos reciben identificadores nuevos.
+- **Visibilidad**: cada instantánea se filtra por observador (radio de visión + línea de visión contra muros, puertas cerradas y objetos altos, más lo que muestre su cámara activa). Las entidades usan identificadores opacos por observador; disfraces y señuelos reciben identificadores nuevos.
+- **Polígono de visión exacto** (`MapRuntime.visibility`): rayos hacia cada esquina de los oclusores (rectángulos y segmentos) más un anillo base; la luz entra en el muro hasta su cara opuesta y nunca más allá, así que los bordes siguen al muro en línea recta. En el cliente la niebla es una textura a resolución de pantalla: polígono × degradado radial suave, y se recortan encima las siluetas visibles de personajes y muebles, sin bandas horizontales sobre el personaje.
+- **Contornos de interacción**: la silueta del objeto se perfila (amarillo para trabajo o compra, rojo solo para el impostor) en lugar de aros o discos bajo él. Los marcadores del minimapa se enlazan por identificador al objetivo actual real.
 - **Tiempo**: el reloj de juego `gt` solo avanza en exploración, de modo que reuniones pausan enfriamientos, sabotajes no críticos, preparación del arma y llegada. Los plazos viajan como valores `gt` absolutos y el cliente los estima con corrección suave.
-- **Estados**: `ESPERA → INICIO → EXPLORACIÓN → DISCUSIÓN → VOTACIÓN → RESULTADOS → EXPULSIÓN → FINAL`. La resolución terminal es atómica (`endGame` bloquea más acciones y emite un único resultado).
+- **Estados**: Viaje `ESPERA → INICIO → EXPLORACIÓN → DISCUSIÓN → VOTACIÓN → RESULTADOS → EXPULSIÓN → FINAL`; Supermercado `ESPERA → INICIO → COMPRA → CAJA → DISCUSIÓN → VOTACIÓN → RESULTADOS → EXPULSIÓN → COMPRA…`. Los finales de fase viajan como instantes absolutos del reloj del servidor. La resolución terminal es atómica (`endGame` bloquea más acciones y emite un único resultado).
+- **Supermercado** (`src/server/game/market.ts`): la comida elegida solo se envía en el estado privado de los trabajadores; el impostor no la recibe nunca. Las estanterías, la mano, la entrega y la devolución las valida el servidor; los demás solo ven una bolsa. Al cierre se construye la cola de caja (con SIN APORTE para quien no entregó) y se revela uno a uno; el historial de rondas queda en la reunión.
+- **Trampillas**: estados explícitos FUERA → ENTRANDO → DENTRO → VIAJANDO → SALIENDO, con la tapa animada una sola vez por transición. Dentro, el servidor envía solo los ángulos de las conexiones reales (sin nombres) y cada pulsación es una única petición.
+- **Personajes**: un único compositor (`art/compose.ts`) con anclajes de cabeza, ojos y cuello sirve al mundo, la vista previa del vestuario, el chat, los votos y las cinemáticas.
 - **Práctica**: `LocalTransport` ejecuta el mismo `RoomManager` dentro del navegador; no es multijugador.
 
 ## Planos dimensionales
 
-Unidades de mundo (u). Personaje: cuerpo 34 × 40 u, colisión circular de 12 u en los pies. Muros horizontales con cara visible: 56 u (tapa 14 + cara 42). Muros verticales: 18 u. Puertas: 92 u.
-
-### TREN · El Expreso (locomotora a la izquierda)
-
-| Constante | Valor |
-| --- | --- |
-| Módulos | 9 (locomotora + 8 vagones) |
-| Longitud de módulo `MOD_L` | 600 u |
-| Anchura `MOD_W` | 300 u (suelo útil y 56–278) |
-| Pasarela entre módulos `GAP` | 70 u, suelo y 121–213 |
-| Origen `X0` | 240 (morro decorativo de 150 u a la izquierda) |
-| Extensión total | x 90–6200 |
-
-Orden: 0 Locomotora (cabina + puesto de control) · 1 Máquinas · 2 Técnico (eléctrica | comunicaciones) · 3 Servicio (+ despensa) · 4 Comedor · 5 Pasajeros A (+ aseo) · 6 Pasajeros B (+ aseo) · 7 Seguridad · 8 Personal y equipaje (+ salón de reunión).
-
-Niveles: **Interior** y **Techo**. El techo reutiliza exactamente las X/Y y anchuras de cada módulo, con pasarelas superiores en cada hueco. Tres escaleras en las pasarelas 1–2, 4–5 y 7–8, con extremos en la misma X/Y.
+Unidades de mundo (u). Personaje: cuerpo 34 × 40 u, colisión circular de 14 u en los pies. Muros horizontales con cara visible: 56 u. Muros verticales: 18 u. Puertas: 92 u. Todos los mapas tienen una sola planta: no hay escaleras, techos ni niveles técnicos.
 
 ### BARCO · El Ferry (proa a la izquierda)
 
-| Cubierta | Huella | Contenido |
-| --- | --- | --- |
-| Inferior (técnica) | x 600–3240, y 240–880 | Bodega de carga, distribución eléctrica, generadores, máquinas, bombas de achique, corredor, taller |
-| Principal | casco x 60–3480, y 44–1056; interior x 700–3100 | Recepción, camarotes norte y sur, pasillos con anillo, restaurante, cocina, despensa, baños, enfermería, sala de personal, vestíbulo de popa, cubiertas exteriores con barandillas |
-| Superior | x 740–3100, y 170–930 | Puente de mando, vestíbulo, comunicaciones, seguridad y paseo exterior con chimenea y botes |
+Salas en x 130–3442, y 70–1030. 16 salas: cubiertas exteriores de proa y popa, bandas de babor y estribor con barandilla, pasillo central, puente de mando, salón de pasajeros, comedor, cocina, sala de personal, radio y comunicaciones, baños, seguridad, electricidad, sala de máquinas y almacén y bodega. 7 trampillas en red explícita, 14 tareas y 5 sabotajes (apagón, comunicaciones, puertas y dos críticos: propulsión y vía de agua).
 
-Escaleras (misma X/Y en ambas cubiertas): proa principal↔inferior (900, 780), popa principal↔inferior (2900, 780), proa principal↔superior (1110, 402), popa principal↔superior (3030, 630).
+### AVIÓN · El Vuelo (cabina de mando a la izquierda)
 
-### AVIÓN · El Vuelo (cabina a la izquierda)
+Salas en x 380–3440, y 216–884 dentro del fuselaje; alas y motores son decorado fijo. 13 salas: cabina de mando, cocina delantera, pasillo de tripulación, comunicaciones, vestíbulo L1, cabina de pasajeros, vestíbulo trasero, aseos, descanso de tripulación, pasillo de servicio, seguridad, equipos eléctricos y bodega de servicio. 7 trampillas, 14 tareas y 5 sabotajes.
 
-| Elemento | Posición |
-| --- | --- |
-| Fuselaje | x 80–3500, y 0–600 |
-| Alas | ancladas en x 1450–2150, envergadura y −1250…1850 (fijas, no transitables) |
-| Motores | (1900, −560) y (1900, 1160) |
-| Cubierta de pasajeros | cabina de pilotos · vestíbulo · pasajeros delantera (doble pasillo) · cocina central · aseos · pasajeros trasera · sala de descanso y servicio |
-| Nivel técnico | equipos eléctricos · bodega delantera · comunicaciones · seguridad · presión · ventilación · taller · bodega trasera |
-| Accesos de servicio | delantero (640, 450) y trasero (2870, 450): únicos enlaces entre niveles |
+### SÚPER · El Carrito
 
-El doble pasillo permite rodear el bloque central de asientos; el nivel técnico cierra un circuito completo con los dos accesos.
+Edificio de 2400 × 1480 u con tres zonas: **Frescos** (mostradores refrigerados de carnicería, pescadería, lácteos y refrigerados en la pared norte), **Pasillos** (3 filas × 3 lineales altos de dos caras, con bahías de producto en cada cara) y **Cajas** (caja abierta con cola marcada, cajas cerradas y salida de emergencia). 150 productos en 11 secciones y 100 comidas. Sin trampillas ni sabotajes. Las estanterías altas bloquean la visión.
 
 ## Rendimiento (diseño)
 
 - Fondos estáticos horneados por nivel en bloques de 1024 u (con solape para evitar costuras), resolución según calidad (1×, 1,25×, 1,5×). Mobiliario alto empaquetado en atlas.
-- Solo la capa del nivel actual se dibuja en la cámara principal; la cámara de vigilancia muestra únicamente el nivel de su cámara.
-- Niebla en una textura de render de baja resolución (0,4–0,6) con polígono de visibilidad recalculado cada 2 fotogramas.
+- Niebla en una textura de render a la resolución de pantalla (según calidad) con el polígono de visibilidad exacto; se recrea al cambiar el zoom o la calidad.
 - Minimapa con base cacheada; solo se redibujan marcadores.
 - Densidad de píxeles limitada por calidad (1, 1,5 o 2).
 - Pasajeros deterministas simulados en el cliente; el servidor no los envía.

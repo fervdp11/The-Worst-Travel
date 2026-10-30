@@ -14,12 +14,12 @@ export function hiddenFromOthers(p: GPlayer): boolean {
   return false;
 }
 
-export function animOf(p: GPlayer): AnimCode {
+export function animOf(p: GPlayer, now = 0): AnimCode {
   if (!p.connected) return 'stopped';
+  if (p.pickUntil > now) return 'pick';
   const t = p.timed;
   if (t) {
     switch (t.kind) {
-      case 'ladder': return 'climb';
       case 'ventIn': return 'ventIn';
       case 'ventOut': return 'ventOut';
       case 'lockerIn': return 'lockerIn';
@@ -68,8 +68,10 @@ function camSees(g: Game, cam: CameraDef | null, level: string, x: number, y: nu
 /** Instantánea filtrada para un observador concreto: solo lo que puede ver. */
 export function buildSnapshot(g: Game, v: GPlayer, now: number): Snapshot {
   const ghostView = !v.alive;
+  // Durante la caja y las reuniones del supermercado todos ven la escena común.
+  const shared = g.mode === 'market' && g.phase !== 'COMPRA';
   const vr = g.visionOf(v) + 50;
-  const cam = ghostView ? null : activeCamera(g, v);
+  const cam = ghostView || g.mode === 'market' ? null : activeCamera(g, v);
   const ents: EntSnap[] = [];
   for (const p of g.players.values()) {
     if (p === v || p.left) continue;
@@ -83,7 +85,7 @@ export function buildSnapshot(g: Game, v: GPlayer, now: number): Snapshot {
     if (hiddenFromOthers(p) && ghostView && p.state !== 'locker' && !p.invisible) continue;
     let seen = false;
     let viaCam: string | undefined;
-    if (ghostView) seen = p.level === v.level;
+    if (ghostView || shared) seen = p.level === v.level;
     else seen = seesPoint(g, v, p.level, p.x, p.y, vr);
     if (!seen && camSees(g, cam, p.level, p.x, p.y)) { seen = true; viaCam = cam!.id; }
     if (!seen) continue;
@@ -93,8 +95,13 @@ export function buildSnapshot(g: Game, v: GPlayer, now: number): Snapshot {
       key = `dis:${p.id}:${p.disguise.seq}`;
       if (t) { name = t.name; color = t.color; acc = t.acc; }
     }
-    const e: EntSnap = { h: g.handleFor(v, key), k: 'p', x: r1(p.x), y: r1(p.y), l: p.level, f: p.facing, a: animOf(p), n: name, c: color, ac: acc };
-    if (p.carrying) e.tr = 1;
+    const e: EntSnap = { h: g.handleFor(v, key), k: 'p', x: r1(p.x), y: r1(p.y), l: p.level, f: p.facing, a: animOf(p, now), n: name, c: color, ac: acc };
+    // En el súper la bolsa es cerrada: nunca se envía el producto a los demás.
+    if (p.carrying) { if (g.mode === 'market') e.bg = 1; else e.tr = 1; }
+    if (p.timed && (p.timed.kind === 'ventIn' || p.timed.kind === 'ventOut' || p.timed.kind === 'lockerIn' || p.timed.kind === 'lockerOut')) {
+      e.hs = p.timed.kind;
+      e.hst = p.timed.kind.startsWith('vent') ? (p.vent?.id ?? p.timed.data.vent) : p.locker?.id;
+    }
     if (!p.connected) e.dc = 1;
     if (viaCam) e.cam = viaCam;
     if (p.speedBoostEndsGt > g.gt && p.moving) e.sp = 1;
@@ -127,7 +134,11 @@ export function buildSnapshot(g: Game, v: GPlayer, now: number): Snapshot {
   return {
     t: now,
     gt: g.gt,
-    me: { x: r1(v.x), y: r1(v.y), l: v.level, ack: v.ack, st: v.state, f: v.facing, vis: Math.round(g.visionOf(v)), speed: g.speedOf(v) },
+    me: {
+      x: r1(v.x), y: r1(v.y), l: v.level, ack: v.ack, st: v.state, f: v.facing, vis: Math.round(g.visionOf(v)), speed: g.speedOf(v),
+      ...(v.timed && (v.timed.kind === 'ventIn' || v.timed.kind === 'ventOut' || v.timed.kind === 'ventMove' || v.timed.kind === 'lockerIn' || v.timed.kind === 'lockerOut')
+        ? { hs: v.timed.kind, hst: v.timed.kind.startsWith('vent') ? (v.vent?.id ?? v.timed.data.vent) : v.locker?.id } : {}),
+    },
     e: ents,
   };
 }
@@ -143,7 +154,7 @@ export function occupancy(g: Game, level: string): OccupancyData {
   for (const z of zones) counts[z.id] = 0;
   for (const p of g.players.values()) {
     if (!p.alive || p.left || p.level !== level) continue;
-    if (p.state === 'vent' || p.timed?.kind === 'ladder') continue;
+    if (p.state === 'vent') continue;
     const room = g.rt.roomAt(p.level, p.x, p.y);
     if (room && room.zone in counts) counts[room.zone]++;
   }
