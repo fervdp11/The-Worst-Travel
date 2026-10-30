@@ -88,7 +88,7 @@ export function levelBase(def: MapDef, level: string, w: number, h: number, labe
   }
   for (const s of def.stations) {
     if (s.level !== level) continue;
-    if (s.kind === 'emergency') { ctx.fillStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(s.x, s.y, 9 * lw * 2.2, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 2 * lw; ctx.stroke(); }
+    if (s.kind === 'emergency') { ctx.fillStyle = '#ff4d5e'; ctx.beginPath(); ctx.arc(s.x, s.y, Math.max(16, 5 * lw), 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = INK; ctx.lineWidth = 1.5 * lw; ctx.stroke(); }
     if (s.kind === 'checkout') { ctx.fillStyle = '#3ddc97'; ctx.fillRect(s.x - 30, s.y - 14, 60, 28); ctx.strokeStyle = INK; ctx.lineWidth = 2 * lw; ctx.strokeRect(s.x - 30, s.y - 14, 60, 28); }
   }
   ctx.restore();

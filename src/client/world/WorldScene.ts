@@ -56,6 +56,8 @@ interface PropView {
   /** Copias teñidas para el contorno de silueta (se crean bajo demanda). */
   outline: Phaser.GameObjects.Image[] | null;
   visible: boolean;
+  /** Fracción de su contorno con línea de visión (0–1). */
+  seen: number;
 }
 
 export interface InteractInfo {
@@ -229,12 +231,12 @@ export class WorldScene extends Phaser.Scene {
         // Muebles siempre opacos: el orden de capas lo da la base frontal.
         img.setDepth(p.rect.y + p.rect.h);
         this.layers.get(p.level)!.add(img);
-        this.props.push({ def: p, img, key, frame, outline: null, visible: true });
+        this.props.push({ def: p, img, key, frame, outline: null, visible: true, seen: 1 });
         if (p.anim) this.addAmbient(p);
       });
       flatInt.forEach((p, i) => {
         const [key, frame] = frames.get(`flat${i}`)!;
-        this.props.push({ def: p, img: null, key, frame, outline: null, visible: true });
+        this.props.push({ def: p, img: null, key, frame, outline: null, visible: true, seen: 1 });
       });
       this.linkStations();
       // Fondo horneado (suelos, muros, sombras físicas)
@@ -1129,8 +1131,8 @@ export class WorldScene extends Phaser.Scene {
           else if (myTaskStations.has(s.id)) { c = { kind: 'use', label: s.name, verb: 'Usar', color: YELLOW }; info.taskNear = true; }
           break;
         case 'emergency': if (alive) c = { kind: 'emergency', label: 'Convocar reunión', verb: 'Reunión', color: YELLOW }; break;
-        case 'vent': if (alive && (isImp || priv.role === 'ingeniero')) { info.ventNear = s.id; c = { kind: 'vent', label: 'Trampilla', verb: 'Entrar', color: isImp ? RED : YELLOW }; } break;
-        case 'locker': if (alive) c = { kind: 'locker', label: s.name, verb: 'Ocultarse', color: YELLOW }; break;
+        case 'vent': if (alive && (isImp || priv.role === 'ingeniero')) { info.ventNear = s.id; c = { kind: 'vent', label: 'Trampilla', verb: this.pos.st === 'vent' ? 'Salir' : 'Entrar', color: isImp ? RED : YELLOW }; } break;
+        case 'locker': if (alive) c = { kind: 'locker', label: s.name, verb: this.pos.st === 'locker' ? 'Salir' : 'Ocultarse', color: YELLOW }; break;
         case 'cameras': case 'occupancy': if (alive) c = { kind: 'use', label: s.name, verb: 'Usar', color: YELLOW }; break;
         case 'sabotage': if (alive && (isImp || store.room?.practice)) { info.sabotageStation = s.id; c = { kind: 'sabotage', label: s.name, verb: 'Preparar sabotaje', color: RED }; } break;
         case 'knife': if (alive && isImp && knifeSt.has(s.id)) c = { kind: 'use', label: s.name, verb: 'Registrar', color: RED }; break;
@@ -1204,6 +1206,8 @@ export class WorldScene extends Phaser.Scene {
    * una franja. Todo usa la misma transformación mundo→textura.
    */
   private updateFog(rx: number, ry: number) {
+    // Cambio de zoom o calidad: se recrean las texturas ANTES de tomar referencias.
+    if (this.fog && Math.abs(this.targetFogRes() - this.fogRes) > 0.01) this.createFog();
     const fog = this.fog, brush = this.brush, visImg = this.visImg;
     if (!fog || !brush || !visImg) return;
     const cam = this.cameras.main;
@@ -1211,7 +1215,6 @@ export class WorldScene extends Phaser.Scene {
     const noFog = this.mode === 'lobby' || this.pos.ghost || this.sharedView();
     fog.setVisible(!noFog);
     if (noFog) return;
-    if (Math.abs(this.targetFogRes() - this.fogRes) > 0.01) this.createFog();
     const R = this.fogRes;
     const margin = 48;
     // Alineado a la rejilla de píxeles de la textura para que los bordes no tiemblen.
@@ -1272,7 +1275,8 @@ export class WorldScene extends Phaser.Scene {
       const r = pv.def.rect;
       if (r.x > v.right + 40 || r.x + r.w < v.x - 40 || r.y - pv.def.h > v.bottom + 40 || r.y + r.h < v.y - 40) continue;
       const cx = Math.max(r.x, Math.min(ox, r.x + r.w)), cy = Math.max(r.y, Math.min(oy, r.y + r.h));
-      eraseObj(pv.img, pv.img.x, pv.img.y, this.visAt(dist(ox, oy, cx, cy)));
+      // Entero cuando se ve entero; algo más tenue si solo se ve una parte.
+      eraseObj(pv.img, pv.img.x, pv.img.y, this.visAt(dist(ox, oy, cx, cy)) * (0.6 + 0.4 * pv.seen));
     }
   }
 
@@ -1291,7 +1295,10 @@ export class WorldScene extends Phaser.Scene {
         [r.x + r.w / 2, r.y + r.h + 3], [r.x + 4, r.y + r.h + 3], [r.x + r.w - 4, r.y + r.h + 3],
         [r.x - 3, r.y + r.h / 2], [r.x + r.w + 3, r.y + r.h / 2], [r.x + r.w / 2, r.y - 3], [nx, ny],
       ];
-      pv.visible = pts.some(([x, y]) => rt.los(p.level, ox, oy, x, y, this.doors));
+      let n = 0;
+      for (const [x, y] of pts) if (rt.los(p.level, ox, oy, x, y, this.doors)) n++;
+      pv.visible = n > 0;
+      pv.seen = n / pts.length;
     }
   }
 

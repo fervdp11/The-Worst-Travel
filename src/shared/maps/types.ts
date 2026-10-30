@@ -17,7 +17,7 @@ export interface LevelDef {
   index: number;
   /** Área de simulación del nivel (incluye márgenes exteriores no transitables). */
   bounds: Rect;
-  /** Contorno visual del vehículo en este nivel (casco, fuselaje, vagones). */
+  /** Contorno visual del vehículo o edificio (casco, fuselaje, fachada). */
   outline: Vec[][];
 }
 
@@ -190,6 +190,7 @@ export interface InterferenceZoneDef {
 /** Tipos de etapa de la preparación del arma. */
 export type KnifeStageKind = 'docs' | 'search' | 'tool' | 'compartment' | 'ledger' | 'keypad' | 'auth';
 
+/** Nombres de los objetos de la cadena del cuchillo, con su artículo («el manifiesto…», «los partes…»). */
 export interface KnifeTemplate {
   docName: string;
   keyName: string;

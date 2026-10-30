@@ -4,8 +4,12 @@ import type { DoorDef, MapDef, RoomDef, StationDef, ZoneDef } from './types';
 
 /** Radio del cuerpo jugable (cápsula vista desde arriba, no un punto en los pies). */
 export const PLAYER_RADIUS = 14;
-/** Profundidad máxima que la luz entra en un muro para iluminar su cara (nunca lo cruza). */
-export const WALL_LIGHT_DEPTH = 64;
+/**
+ * La luz entra en el sólido alcanzado hasta su cara opuesta (para que la cara
+ * visible del muro quede iluminada entera, sin cortes diagonales), pero nunca
+ * lo cruza. Este tope solo evita recorridos absurdos dentro de muros largos.
+ */
+export const WALL_LIGHT_DEPTH = 2000;
 
 export interface Seg { ax: number; ay: number; bx: number; by: number; half: number }
 
@@ -221,9 +225,9 @@ export class MapRuntime {
    *
    * Cada rayo se corta en la primera arista de oclusor que toca (intersección
    * analítica, no una rejilla), así las aristas rectas producen bordes rectos.
-   * Para que la cara visible de un muro no quede negra, el rayo entra en el
-   * sólido alcanzado hasta su cara opuesta o como máximo `WALL_LIGHT_DEPTH`,
-   * recorriendo la unión de sólidos solapados; nunca sale al otro lado.
+   * Para que la cara visible de un muro no quede negra ni cortada en diagonal,
+   * el rayo recorre la unión de sólidos solapados hasta su cara opuesta; nunca
+   * sale al otro lado, así que no revela el espacio de detrás.
    * Devuelve [x0, y0, x1, y1, ...] en orden angular.
    */
   visibility(level: string, ox: number, oy: number, radius: number, doors: DoorState, out: number[] = [], baseRays = 180): number[] {

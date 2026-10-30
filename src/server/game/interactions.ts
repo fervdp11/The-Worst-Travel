@@ -13,6 +13,11 @@ export function stationLabel(g: Game, id: string): string {
   return g.rt.stations.get(id)?.name ?? id;
 }
 
+/** «el manifiesto» → «El manifiesto». */
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+/** Contracción de «de» con el artículo: «el compartimento» → «del compartimento». */
+const de = (s: string) => (s.startsWith('el ') ? `del ${s.slice(3)}` : `de ${s}`);
+
 function busy(p: GPlayer) {
   return !!p.timed || !!p.panel || (p.state !== 'free' && p.state !== 'ghost');
 }
@@ -260,15 +265,15 @@ function completeKnife(g: Game, p: GPlayer, st: string, decoy: boolean): string 
   const kc = g.knife!;
   switch (kc.kinds[k.stage]) {
     case 'docs':
-      if (kc.kinds.includes('compartment')) { k.codeParts.push(kc.codeA); reveal = `${tpl.docName}: una parte de la combinación es ${kc.codeA}.`; }
-      else { k.codeParts.push(kc.code); reveal = `${tpl.docName}: la combinación completa es ${kc.code}.`; }
+      if (kc.kinds.includes('compartment')) { k.codeParts.push(kc.codeA); reveal = `${cap(tpl.docName)}: una parte de la combinación es ${kc.codeA}.`; }
+      else { k.codeParts.push(kc.code); reveal = `${cap(tpl.docName)}: la combinación completa es ${kc.code}.`; }
       break;
-    case 'search': reveal = `Has encontrado la ${tpl.keyName}.`; break;
-    case 'tool': reveal = `Tienes la ${tpl.toolName}.`; break;
-    case 'compartment': k.codeParts.push(kc.codeB); reveal = `Dentro del ${tpl.compartmentName}: la otra parte es ${kc.codeB}.${kc.kinds.includes('ledger') ? ' Falta saber el orden.' : ` Combinación: ${kc.code}.`}`; break;
-    case 'ledger': reveal = `${tpl.ledgerName}: la combinación empieza por ${kc.swap ? kc.codeB : kc.codeA}. Combinación: ${kc.code}.`; break;
+    case 'search': reveal = `Has encontrado ${tpl.keyName}.`; break;
+    case 'tool': reveal = `Tienes ${tpl.toolName}.`; break;
+    case 'compartment': k.codeParts.push(kc.codeB); reveal = `Dentro ${de(tpl.compartmentName)}: la otra parte es ${kc.codeB}.${kc.kinds.includes('ledger') ? ' Falta saber el orden.' : ` Combinación: ${kc.code}.`}`; break;
+    case 'ledger': reveal = `${cap(tpl.ledgerName)}: la combinación empieza por ${kc.swap ? kc.codeB : kc.codeA}. Combinación: ${kc.code}.`; break;
     case 'keypad': k.hasKnife = true; reveal = 'Tienes el cuchillo. Llévalo oculto.'; break;
-    case 'auth': k.authorized = true; reveal = `${tpl.authName}: hecho. ${g.map.texts.accessGoal}.`; break;
+    case 'auth': k.authorized = true; reveal = `${cap(tpl.authName)}: hecho. ${g.map.texts.accessGoal}.`; break;
   }
   k.stage++;
   k.searched = [];

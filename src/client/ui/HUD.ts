@@ -120,6 +120,8 @@ export class HUD {
     if (isImp && p.knife) {
       clear(this.impPanel);
       this.impPanel.classList.remove('hidden');
+      // Para el impostor, su objetivo real va primero; las tareas aparentes, debajo.
+      this.impPanel.style.order = '-1';
       this.impPanel.append(this.knifeList(false));
       if (this.lastKnifeStage !== -1 && p.knife.stage > this.lastKnifeStage) { this.impPanel.classList.remove('pulse'); void this.impPanel.offsetWidth; this.impPanel.classList.add('pulse'); }
       this.lastKnifeStage = p.knife.stage;
@@ -136,14 +138,33 @@ export class HUD {
       h('h4', null, 'Objetivo secreto'),
       h('div', { class: 'small' }, `Final: atacar a ${resp ? `${resp.title.toLowerCase()} (${resp.name})` : 'el responsable'} con el cuchillo.`),
       h('div', { class: 'progress small-bar', title: `Preparación ${pct} %` }, h('i', { style: `width:${pct}%` })),
-      h('ol', null, k.steps.map((s, i) => h('li', { class: s.state },
-        h('span', { class: 'n' }, s.state === 'done' ? '✔' : s.state === 'locked' ? '🔒' : String(i + 1)),
-        h('span', null, s.state === 'current' ? h('b', null, s.label) : s.label)))),
+      h('ol', null, this.knifeRows(k.steps)),
       h('div', { class: 'clue' }, k.clue),
     );
     if (k.codeParts.length) box.append(h('div', { class: 'code' }, `Combinación: ${k.codeParts.join(' · ')}`));
     box.append(h('div', { class: 'small muted' }, k.hasKnife ? (k.authorized ? 'Arma oculta y acceso listo: acércate y mantén ATACAR.' : 'Arma oculta. Falta el último requisito.') : `Preparación: ${done}/${k.total} etapas.`));
     return box;
+  }
+
+  /** Filas de la cadena: las etapas bloqueadas intermedias se agrupan en una sola línea para no tapar el HUD. */
+  private knifeRows(steps: { label: string; state: string }[]): HTMLElement[] {
+    const rows: HTMLElement[] = [];
+    const row = (state: string, n: string, label: HTMLElement | string) => h('li', { class: state }, h('span', { class: 'n' }, n), h('span', null, label));
+    let i = 0;
+    while (i < steps.length) {
+      const s = steps[i];
+      const last = i === steps.length - 1;
+      if (s.state === 'locked' && !last) {
+        let j = i;
+        while (j + 1 < steps.length - 1 && steps[j + 1].state === 'locked') j++;
+        rows.push(row('locked', '🔒', j > i ? `Etapas ${i + 1}–${j + 1}: se desbloquean en orden` : s.label));
+        i = j + 1;
+        continue;
+      }
+      rows.push(row(s.state, s.state === 'done' ? '✔' : s.state === 'locked' ? '🔒' : String(i + 1), s.state === 'current' ? h('b', null, s.label) : s.label));
+      i++;
+    }
+    return rows;
   }
 
   private marketSummary(compact: boolean): HTMLElement {

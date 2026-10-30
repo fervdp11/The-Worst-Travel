@@ -159,8 +159,9 @@ export function ejectionScene(host: HTMLElement, map: MapId, actor: EjectActor |
         g.strokeStyle = '#ff4d5e'; g.lineWidth = 10; g.beginPath(); g.arc(W * 0.72, H * 0.66, 30, 0, Math.PI * 2); g.stroke();
         g.fillStyle = `rgba(255,255,255,${0.8 * (1 - s)})`; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(W * 0.72 - 40 + i * 16, H * 0.64 - s * 30 - (i % 2) * 8, 7, 0, Math.PI * 2); g.fill(); }
       }
-      if (map === 'plane' && fly > 0.55) {
-        g.save(); g.translate(x, y - size - 30); g.fillStyle = '#ff8a3d'; g.strokeStyle = INK; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 54, Math.PI, 0); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(-50, 0); g.lineTo(0, 30); g.lineTo(50, 0); g.stroke(); g.restore();
+      if (map === 'plane' && fly > 0.55 && fade > 0) {
+        // El paracaídas va unido al personaje: aparece y se desvanece con él.
+        g.save(); g.globalAlpha = fade * clamp01((fly - 0.55) * 4); g.translate(x, y - size - 30); g.fillStyle = '#ff8a3d'; g.strokeStyle = INK; g.lineWidth = 3; g.beginPath(); g.arc(0, 0, 54, Math.PI, 0); g.closePath(); g.fill(); g.stroke(); g.beginPath(); g.moveTo(-50, 0); g.lineTo(0, 30); g.lineTo(50, 0); g.stroke(); g.restore();
       }
     } else if (map === 'market') {
       // Sin expulsado: el carrito pasa vacío y la puerta se cierra.

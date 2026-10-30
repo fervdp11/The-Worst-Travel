@@ -578,14 +578,25 @@ export function drawProp(ctx: Ctx, p: PropDef, pal: MapPalette, mapId: string) {
       return;
     }
     case 'gateSign': {
-      const cols = ['#c8323f', '#20375c', '#2f6fb3'];
-      const names = ['TREN · Andén 3', 'BARCO · Muelle 1', 'AVIÓN · Puerta B7'];
+      const cols = ['#e0702e', '#20375c', '#2f6fb3'];
+      const names = ['SÚPER · El Carrito', 'BARCO · Muelle 1', 'AVIÓN · Puerta B7'];
       obliqueBox(ctx, w, d, h, '#2b2d42', cols[p.variant ?? 0], 6);
       label(ctx, names[p.variant ?? 0], w / 2, d + h / 2, 15, '#ffffff');
       return;
     }
     case 'mirror': rr(ctx, 0, 0, w, d + h, 5); fillStroke(ctx, vgrad(ctx, 0, d + h, '#dff3ff', '#9ec9e2'), INK, 2.5); ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(12, 8); ctx.lineTo(28, 30); ctx.stroke(); return;
-    case 'overheadBins': rr(ctx, 0, 0, w, d + h, 4); fillStroke(ctx, '#dfe6ef', INK, 1.6); return;
+    case 'overheadBins': {
+      // Compartimentos sobre los asientos: puertas con cierre y sombra suave sobre la pared.
+      ctx.fillStyle = 'rgba(20,12,40,0.18)'; rr(ctx, 2, 4, w, d + h - 2, 4); ctx.fill();
+      rr(ctx, 0, 0, w, d + h - 4, 4); fillStroke(ctx, vgrad(ctx, 0, d + h, '#eef2f7', '#c9d2de'), INK, 1.6);
+      const n = Math.max(1, Math.round(w / 64));
+      for (let i = 0; i < n; i++) {
+        const x0 = (i * w) / n + 3, ww = w / n - 6;
+        rr(ctx, x0, 4, ww, d + h - 14, 3); fillStroke(ctx, 'rgba(255,255,255,0.35)', 'rgba(29,24,48,0.45)', 1);
+        rr(ctx, x0 + ww / 2 - 8, d + h - 16, 16, 4, 2); ctx.fillStyle = '#8692a4'; ctx.fill();
+      }
+      return;
+    }
     case 'cartBay': {
       obliqueBox(ctx, w, d, h, '#cdd5e1', '#aeb9c9', 3);
       for (let x = 6; x < w - 26; x += 34) { rr(ctx, x, d + 3, 30, h - 6, 3); fillStroke(ctx, '#e9eef5', INK, 1.2); ctx.fillStyle = '#2f6fb3'; ctx.fillRect(x + 4, d + 8, 22, 3); }

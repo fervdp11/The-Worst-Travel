@@ -19,10 +19,6 @@ export function solve(mg: string, p: any, part: number, secret?: string): Record
       const used = new Set<number>();
       return { map: p.bags.map((b: string) => { const i = p.slots.findIndex((s: string, k: number) => s === b && !used.has(k)); used.add(i); return i; }) };
     }
-    case 'roof': return part === 0 ? { angle: p.target } : { anchors: 3 };
-    case 'signal': return { levers: p.levers, aspect: 'verde' };
-    case 'brakes_read': return { value: (p.lo + p.hi) / 2 };
-    case 'brakes_set': return { value: p.target };
     case 'bilge': return part === 0 ? { strokes: p.strokes } : { valve: true };
     case 'seal': return { order: p.order };
     case 'ballast': return { a: 0.5, b: 0.5 };
@@ -33,10 +29,6 @@ export function solve(mg: string, p: any, part: number, secret?: string): Record
     case 'cabinPressure_door': return { hold: true };
     case 'rep_lights': return part === 0 ? { states: [true, true, true, true, true] } : { hold: true };
     case 'rep_comms': return part === 0 ? { freq: p.target } : { synced: true };
-    case 'crit_levers': return { order: p.order };
-    case 'crit_keyconfirm': return part === 0 ? { key: true } : { hold: true };
-    case 'crit_coolant': return { open: p.open };
-    case 'crit_relief': return { angle: p.target };
     case 'crit_patch': return part === 0 ? { patched: true } : { bolts: 4 };
     case 'crit_pumps': return { order: p.order, lever: true };
     case 'crit_stabilize': return { v: p.bands.map((b: number[]) => (b[0] + b[1]) / 2) };

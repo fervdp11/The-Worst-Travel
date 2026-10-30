@@ -37,9 +37,20 @@ export function mapThumb(id: MapId, w = 480, h2 = 270): HTMLCanvasElement {
     ctx.fillStyle = '#fff';
     if (id === 'ship') ctx.fillRect((i * 97) % w, (i * 53) % h2, 30, 3);
     else if (id === 'plane') { ctx.beginPath(); ctx.ellipse((i * 131) % w, (i * 71) % h2, 40, 14, 0, 0, Math.PI * 2); ctx.fill(); }
-    else { ctx.fillStyle = '#9fb3c8'; ctx.fillRect((i * 89) % w, (i * 61) % h2, 46, 22); }
   }
   ctx.globalAlpha = 1;
+  if (id === 'market') {
+    // Aparcamiento alrededor del edificio: plazas pintadas y algunos coches.
+    ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 2;
+    for (let x = 8; x < w; x += 26) { ctx.beginPath(); ctx.moveTo(x, h2 - 26); ctx.lineTo(x, h2 - 4); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, 4); ctx.lineTo(x, 26); ctx.stroke(); }
+    const cars = ['#ff5a6a', '#ffd23f', '#5cc8ff', '#3ddc97', '#f1ede4'];
+    for (let i = 0; i < 9; i++) {
+      const x = 12 + ((i * 157) % (w - 40)), top = i % 2 === 0;
+      ctx.fillStyle = cars[i % cars.length]; ctx.strokeStyle = '#1d1830'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(x, top ? 6 : h2 - 24, 16, 18, 4); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(29,24,48,0.55)'; ctx.fillRect(x + 3, (top ? 6 : h2 - 24) + 4, 10, 5);
+    }
+  }
   const bh = Math.round(h2 * 0.82);
   const base = levelBase(def, def.levels[0].id, w - 30, bh, false);
   ctx.drawImage(base, 15, (h2 - bh) / 2);

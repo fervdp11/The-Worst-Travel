@@ -102,12 +102,12 @@ export function describePlace(map: MapDef, rt: MapRuntime, stationIds: string[],
 /** Descripción de cada etapa para el panel privado del impostor. */
 export function stageLabel(kind: KnifeStageKind, tpl: NonNullable<MapDef['knife']>, chain: KnifeChain): string {
   switch (kind) {
-    case 'docs': return chain.kinds.includes('compartment') ? `Lee el ${tpl.docName} (primeros dígitos)` : `Lee el ${tpl.docName} (combinación completa)`;
-    case 'search': return `Encuentra la ${tpl.keyName}`;
-    case 'tool': return `Consigue la ${tpl.toolName}`;
-    case 'compartment': return `Abre el ${tpl.compartmentName} (últimos dígitos)`;
-    case 'ledger': return `Consulta el ${tpl.ledgerName} (orden de la combinación)`;
-    case 'keypad': return `Abre el ${tpl.containerName} y coge el cuchillo`;
-    case 'auth': return `Manipula la ${tpl.authName}`;
+    case 'docs': return chain.kinds.includes('compartment') ? `Lee ${tpl.docName} (primeros dígitos)` : `Lee ${tpl.docName} (combinación completa)`;
+    case 'search': return `Encuentra ${tpl.keyName}`;
+    case 'tool': return `Consigue ${tpl.toolName}`;
+    case 'compartment': return `Abre ${tpl.compartmentName} (últimos dígitos)`;
+    case 'ledger': return `Consulta ${tpl.ledgerName} (orden de la combinación)`;
+    case 'keypad': return `Abre ${tpl.containerName} y coge el cuchillo`;
+    case 'auth': return `Manipula ${tpl.authName}`;
   }
 }

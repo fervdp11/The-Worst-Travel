@@ -4,7 +4,7 @@ import { io } from 'socket.io-client';
 
 const [code, nArg, url = 'http://localhost:3000'] = process.argv.slice(2);
 const n = Number(nArg) || 3;
-const PROTOCOL = 7;
+const PROTOCOL = 8;
 for (let i = 0; i < n; i++) {
   const s = io(url, { transports: ['websocket'] });
   let seq = 0;

@@ -10,20 +10,20 @@ import { showHowTo } from './HowTo';
 import { mapCards, modeCards } from './MapCards';
 import { showPrefs } from './SettingsUI';
 
-/** Fondo animado ligero: tres viajes en paralaje con sprites precalculados. */
+/** Fondo animado ligero: barco, avión y la furgoneta del súper en paralaje con sprites precalculados. */
 function animatedBackground(): { el: HTMLCanvasElement; stop: () => void } {
   const c = makeCanvas(10, 10);
   c.className = 'menu-bg';
   const ctx = c.getContext('2d')!;
   const sprite = (w: number, hh: number, fn: (g: CanvasRenderingContext2D) => void) => { const s = makeCanvas(w, hh); const g = s.getContext('2d')!; g.lineJoin = 'round'; fn(g); return s; };
-  const train = sprite(520, 70, (g) => {
-    for (let i = 0; i < 4; i++) {
-      const x = 10 + i * 128;
-      rr(g, x, 10, 118, 42, 8); fillStroke(g, vgrad(g, 10, 52, i === 0 ? '#e04b58' : '#8c3443', i === 0 ? '#9e2531' : '#5d1f2b'), INK, 3);
-      g.fillStyle = '#d9a441'; g.fillRect(x + 4, 34, 110, 3);
-      for (let k = 0; k < 4; k++) { rr(g, x + 10 + k * 26, 18, 18, 12, 3); fillStroke(g, '#bfe3ff', INK, 1.5); }
-      for (const wx of [x + 22, x + 96]) { g.beginPath(); g.arc(wx, 56, 8, 0, Math.PI * 2); fillStroke(g, '#2b2d42', INK, 2); }
-    }
+  // Furgoneta de reparto del súper: el tercer modo del juego, por carretera.
+  const van = sprite(250, 92, (g) => {
+    rr(g, 8, 14, 168, 58, 8); fillStroke(g, vgrad(g, 14, 72, '#f1ede4', '#c9c3b6'), INK, 3);
+    g.beginPath(); g.moveTo(176, 30); g.lineTo(214, 30); g.lineTo(238, 52); g.lineTo(238, 72); g.lineTo(176, 72); g.closePath(); fillStroke(g, '#ff8a3d', INK, 3);
+    g.beginPath(); g.moveTo(184, 36); g.lineTo(210, 36); g.lineTo(226, 52); g.lineTo(184, 52); g.closePath(); fillStroke(g, '#bfe3ff', INK, 1.5);
+    g.fillStyle = '#ff8a3d'; g.fillRect(10, 56, 164, 6);
+    g.font = '900 22px "Baloo 2", sans-serif'; g.textAlign = 'center'; g.fillStyle = '#20375c'; g.fillText('EL CARRITO', 92, 48);
+    for (const wx of [48, 200]) { g.beginPath(); g.arc(wx, 74, 12, 0, Math.PI * 2); fillStroke(g, '#2b2d42', INK, 2.5); g.beginPath(); g.arc(wx, 74, 4, 0, Math.PI * 2); g.fillStyle = '#a8b1c8'; g.fill(); }
   });
   const ship = sprite(380, 140, (g) => {
     g.beginPath(); g.moveTo(10, 80); g.lineTo(370, 80); g.lineTo(330, 128); g.lineTo(40, 128); g.closePath(); fillStroke(g, '#20375c', INK, 3);
@@ -67,11 +67,11 @@ function animatedBackground(): { el: HTMLCanvasElement; stop: () => void } {
     for (let i = 0; i < 18; i++) { const x = ((i * 120 - t * 50 * slow) % (W + 120) + W + 120) % (W + 120) - 60; ctx.fillRect(x, H * 0.66 + (i % 4) * 14, 40, 2); }
     const sx = W - ((t * 40 * slow + 400) % (W + 500)) + 100;
     ctx.save(); ctx.translate(sx, H * 0.6 + Math.sin(t * 1.1) * 3); ctx.rotate(Math.sin(t * 0.9) * 0.015); ctx.drawImage(ship, 0, 0); ctx.restore();
-    ctx.fillStyle = '#3d3a35'; ctx.fillRect(0, H * 0.9, W, 10);
-    ctx.fillStyle = '#6b4f35'; for (let x = -((t * 300 * slow) % 30); x < W; x += 30) ctx.fillRect(x, H * 0.9 - 2, 10, 14);
-    ctx.fillStyle = '#c9ced8'; ctx.fillRect(0, H * 0.9, W, 3);
-    const tx = W - ((t * 160 * slow + 900) % (W + 900)) + 300;
-    ctx.drawImage(train, tx, H * 0.9 - 58 + Math.sin(t * 30) * 0.4);
+    // Carretera de la costa con su línea discontinua
+    ctx.fillStyle = '#3b4250'; ctx.fillRect(0, H * 0.88, W, H * 0.12);
+    ctx.fillStyle = '#e8e2d4'; for (let x = -((t * 220 * slow) % 60); x < W; x += 60) ctx.fillRect(x, H * 0.94, 30, 3);
+    const vx = W - ((t * 120 * slow + 700) % (W + 700)) + 250;
+    ctx.drawImage(van, vx, H * 0.88 - 62 + Math.abs(Math.sin(t * 9)) * 1.2);
     ctx.fillStyle = 'rgba(10,14,30,0.35)'; ctx.fillRect(0, 0, W, H);
     raf = requestAnimationFrame(frame);
   };
@@ -89,7 +89,7 @@ export function showMainMenu(app: App) {
   nameInput.addEventListener('input', () => store.setPrefs({ name: nameInput.value.trim() }));
   const needName = () => {
     if (!store.prefs.name.trim()) {
-      const names = ['Revisora Luz', 'Grumete Ian', 'Azafata Noa', 'Maquinista Leo', 'Sobrecargo Sol', 'Mozo Teo'];
+      const names = ['Reponedora Luz', 'Grumete Ian', 'Azafata Noa', 'Cajero Leo', 'Sobrecargo Sol', 'Mozo Teo'];
       store.setPrefs({ name: names[Math.floor(Math.random() * names.length)] });
       nameInput.value = store.prefs.name;
     }

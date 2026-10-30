@@ -16,7 +16,7 @@ export interface ParamDef {
 
 export interface RoleDef {
   id: RoleId;
-  /** Nombre canónico: idéntico en tren, barco y avión. */
+  /** Nombre canónico: idéntico en todos los mapas. */
   name: string;
   team: Team;
   short: string;

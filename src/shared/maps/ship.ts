@@ -256,7 +256,7 @@ export function buildShip(): MapDef {
   b.prop(M, 'lifeboat', 3170, 200, 230, 60, 44);
   b.prop(M, 'lifeboat', 3170, 840, 230, 60, 44);
   b.prop(M, 'bench', 3180, 420, 34, 110, 30);
-  npcs.push({ id: 'n_popa1', level: M, x: 3215, y: 450, facing: 1, pose: 'sit', act: 'window' });
+  npcs.push({ id: 'n_popa1', level: M, x: 3200, y: 500, facing: 1, pose: 'sit', act: 'window' });
   b.prop(M, 'flagPole', 3380, 540, 24, 24, 110, { anim: 'flag' });
   b.prop(M, 'deckBox', 3250, 690, 80, 50, 34);
   b.st('k_comp_popa', M, 3290, 780, 'knife', 'Cofre de cubierta con candado');
@@ -344,13 +344,13 @@ export function buildShip(): MapDef {
       { id: 'ballast', type: 'ballast', name: 'Equilibrar lastre', length: 'long', exclusive: true, stages: [{ stations: ['ballast_alm'], label: 'Equilibra los tanques (Almacén)' }, { stations: ['assist_puente'], label: 'Confirma el trimado en el Puente' }] },
     ],
     knife: {
-      docName: 'manifiesto manipulado',
-      keyName: 'llave maestra de taquillas',
-      toolName: 'palanca de servicio',
-      compartmentName: 'compartimento de mantenimiento',
-      ledgerName: 'registro de guardias',
-      containerName: 'cofre con combinación',
-      authName: 'autorización de acceso al puente',
+      docName: 'el manifiesto manipulado',
+      keyName: 'la llave maestra de taquillas',
+      toolName: 'la palanca de servicio',
+      compartmentName: 'el compartimento de mantenimiento',
+      ledgerName: 'el registro de guardias',
+      containerName: 'el cofre con combinación',
+      authName: 'la autorización de acceso al puente',
       pools: {
         docs: ['k_docs_diario', 'k_docs_tablon', 'k_docs_carta'],
         search: ['k_key_revistero', 'k_key_propinas', 'k_key_botiquin', 'k_key_mesa'],
