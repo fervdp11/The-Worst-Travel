@@ -53,6 +53,7 @@ export function makeGame(mapId: MapId, n = 4, mod?: (s: RoomSettings) => void, p
     },
     onEnd: () => {},
   }, { mapId, settings, seed: 12345, configVersion: 1, players, clock: () => now.t, practice });
+  for (const p of players) h.game.markReady(p.id);
   return h;
 }
 

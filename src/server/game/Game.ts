@@ -70,6 +70,8 @@ export class Game {
   practice: GameInit['practice'];
   configVersion: number;
   seed: number;
+  startedAt: number;
+  ready = new Set<string>();
 
   constructor(public host: GameHost, init: GameInit) {
     this.clock = init.clock ?? Date.now;
@@ -82,6 +84,7 @@ export class Game {
     this.practice = init.practice ?? null;
     this.configVersion = init.configVersion;
     this.lastTickAt = this.clock();
+    this.startedAt = this.lastTickAt;
     this.phaseEnds = this.lastTickAt + INTRO_MS;
     this.doorState = { isClosed: (id) => this.closedDoors.has(id) };
     this.sabotageReadyGt = this.gs.sabotageGrace * 1000;
@@ -218,6 +221,11 @@ export class Game {
     }
     this.host.send(pid, 'ack', { id: msg.id, ok: res === null, msg: res ?? undefined });
     if (res && res !== 'silencio') this.toast(pid, res, 'warn');
+  }
+
+  /** El cliente terminó de construir el mapa de la partida. */
+  markReady(pid: string) {
+    this.ready.add(pid);
   }
 
   onDisconnect(pid: string) {
@@ -419,6 +427,7 @@ export class Game {
     if (this.phaseEnds === null || now < this.phaseEnds) return;
     switch (this.phase) {
       case 'INICIO':
+        if (now - this.startedAt < 15_000 && [...this.players.values()].some((p) => p.connected && !p.left && !this.ready.has(p.id))) return;
         this.setPhase('EXPLORACION', null);
         for (const p of this.players.values()) { p.state = 'free'; p.dirtyPriv = true; }
         break;
